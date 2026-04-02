@@ -1,0 +1,26 @@
+# macOS
+.DS_Store
+
+# Database
+data/stocks.db
+data/notification_status.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+
+# Vue build output
+vue-project/dist/
+vue-project/node_modules/
+
+# Logs — 分层目录结构，仅跟踪代码文件
+logs/*
+!logs/logger.py
+!logs/__init__.py
+
+# IDE
+.vscode/
+.idea/
