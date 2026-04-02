@@ -95,10 +95,19 @@ def check_and_notify(code: str, name: str, threshold_percent: float,
             reason = f"跌幅 {change_percent:+.2f}% 达阈值 {abs(threshold_percent)}%"
 
     # 指定价格监控（独立于涨跌幅阈值）
+    # 方案B：自动推断方向
+    # - 如果当前价 >= target_price → 止盈监控（价格已高于目标，突破向上触发）
+    # - 如果当前价 < target_price → 买入监控（价格低于目标，跌到触发）
     if target_price and target_price > 0:
         if current_price >= target_price:
+            # 价格已在目标价上方或相等 → 止盈监控，涨破触发
             triggered = True
-            reason = f"股价 {current_price:.2f} 达到/突破目标价 {target_price:.2f}"
+            reason = f"股价 {current_price:.2f} 达到/突破目标价 {target_price:.2f}（止盈监控）"
+        else:
+            # 价格在目标价下方 → 买入监控，跌到触发
+            if current_price <= target_price:
+                triggered = True
+                reason = f"股价 {current_price:.2f} 跌至目标价 {target_price:.2f}（买入监控）"
 
     if triggered and code not in _notified_today:
         ok = send_alert(

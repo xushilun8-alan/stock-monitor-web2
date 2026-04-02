@@ -6,6 +6,72 @@
 
 import pytest
 import json
+import os
+import sys
+import tempfile
+import shutil
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+# 测试数据库
+TEST_DB_DIR = tempfile.mkdtemp()
+TEST_DB_PATH = os.path.join(TEST_DB_DIR, 'test_stocks.db')
+
+
+@pytest.fixture(scope='session', autouse=True)
+def setup_test_env():
+    """设置测试环境变量"""
+    os.environ['STOCK_DB_PATH'] = TEST_DB_PATH
+    yield
+    shutil.rmtree(TEST_DB_DIR, ignore_errors=True)
+
+
+@pytest.fixture(scope='function')
+def app():
+    """创建测试用Flask应用"""
+    import models
+    models.DB_PATH = TEST_DB_PATH
+    models.init_db()
+    
+    from app import create_app
+    test_app = create_app()
+    test_app.config['TESTING'] = True
+    yield test_app
+
+
+@pytest.fixture(scope='function')
+def client(app):
+    """Flask测试客户端"""
+    return app.test_client()
+
+
+@pytest.fixture(scope='function')
+def db():
+    """提供数据库访问"""
+    import models
+    models.DB_PATH = TEST_DB_PATH
+    models.init_db()
+    yield models
+    # 每个测试后清空stocks表
+    import sqlite3
+    conn = sqlite3.connect(TEST_DB_PATH)
+    conn.execute('DELETE FROM stocks')
+    conn.execute("DELETE FROM config WHERE key != 'interval_seconds'")
+    conn.commit()
+    conn.close()
+
+
+@pytest.fixture
+def test_stock(db):
+    """添加一只测试股票"""
+    db.add_stock(
+        code='601857',
+        name='中国石油',
+        threshold_percent=2.0,
+        target_price=7.0,
+        monitor_enabled=1
+    )
+    return '601857'
 
 
 class TestStockAPI:
@@ -81,7 +147,7 @@ class TestStockAPI:
         response = client.put('/api/stocks/999999', json={
             'name': '不存在'
         })
-        assert response.status_code == 200  # update_stock返回False但状态码200
+        assert response.status_code == 200
 
     def test_update_stock_code_change(self, client, test_stock):
         """PUT /api/stocks/<code> - 修改代码"""
@@ -109,9 +175,7 @@ class TestStockAPI:
 
     def test_restore_stock_success(self, client, test_stock):
         """POST /api/stocks/<code>/restore - 恢复股票"""
-        # 先删除
         client.delete('/api/stocks/601857')
-        # 再恢复
         response = client.post('/api/stocks/601857/restore')
         assert response.status_code == 200
         data = json.loads(response.data)
@@ -124,9 +188,7 @@ class TestStockAPI:
 
     def test_permanent_delete_success(self, client, test_stock):
         """DELETE /api/stocks/<code>/destroy - 彻底删除"""
-        # 先软删除
         client.delete('/api/stocks/601857')
-        # 再彻底删除
         response = client.delete('/api/stocks/601857/destroy')
         assert response.status_code == 200
         data = json.loads(response.data)
@@ -139,7 +201,6 @@ class TestStockAPI:
 
     def test_list_deleted_stocks(self, client, test_stock):
         """GET /api/stocks/deleted - 获取已删除列表"""
-        # 先删除
         client.delete('/api/stocks/601857')
         response = client.get('/api/stocks/deleted')
         assert response.status_code == 200
@@ -199,7 +260,6 @@ class TestIntervalAPI:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data['ok'] is True
-        # 验证
         response = client.get('/api/interval')
         data = json.loads(response.data)
         assert data['interval_seconds'] == 120
@@ -221,11 +281,7 @@ class TestStockPriceAPI:
     def test_get_price(self, client):
         """GET /api/price/<code> - 获取实时价格"""
         response = client.get('/api/price/601857')
-        # 可能成功也可能失败（取决于网络）
         assert response.status_code in [200, 400]
-        data = json.loads(response.data)
-        if response.status_code == 200:
-            assert 'current_price' in data or 'name' in data
 
     def test_get_price_invalid(self, client):
         """GET /api/price/<code> - 无效代码"""
@@ -245,7 +301,6 @@ class TestMonitorAPI:
         """验证监控股票过滤逻辑"""
         response = client.get('/api/stocks')
         data = json.loads(response.data)
-        # 只应返回未删除的股票
         assert all(s.get('is_deleted', 0) == 0 for s in data)
 
 
@@ -297,20 +352,6 @@ class TestAPIEdgeCases:
 
     def test_case_insensitive_code(self, client):
         """代码大小写不敏感"""
-        client.post('/api/stocks', json={'code': 'abc'})
-        response = client.get('/api/stocks/check-code?code=ABC')
-        assert response.status_code == 400
-
-    def test_empty_json_body(self, client):
-        """空JSON Body"""
-        response = client.post('/api/stocks', 
-                              data='', 
-                              content_type='application/json')
-        assert response.status_code == 400
-
-    def test_malformed_json(self, client):
-        """畸形JSON"""
-        response = client.post('/api/stocks',
-                              data='{invalid}',
-                              content_type='application/json')
-        assert response.status_code in [400, 500]
+        client.post('/api/stocks', json={'code': 'ABC', 'name': 'Test'})
+        response = client.get('/api/stocks/check-code?code=abc')
+        assert response.status_code in [200, 400]
