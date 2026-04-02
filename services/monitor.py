@@ -144,6 +144,8 @@ def check_and_notify(code: str, name: str, threshold_percent: float,
             )
             if ok:
                 _notified_today.add(notif_key)
+                # 触发后自动清除目标价，避免重复提醒
+                update_stock(code, target_price=None, target_price_direction=1)
 
 
 def check_rebuy_reminders():

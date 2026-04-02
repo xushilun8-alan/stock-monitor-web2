@@ -129,13 +129,37 @@ def api_add_stock():
 
     pd = get_stock_price(clean)
     name = pd.get('name', '') if pd else data.get('name', '')
+    current_price = pd.get('current_price') if pd else None
+
+    target_price = float(data['target_price']) if data.get('target_price') else None
+    
+    # 自动判断目标价方向：
+    # - 用户未显式指定 direction 时，根据 target_price 与当前价自动判断
+    # - target_price >= 当前价 → 止盈监控(1)
+    # - target_price < 当前价 → 买入监控(-1)
+    explicit_direction = data.get('target_price_direction')
+    if target_price is not None and explicit_direction is None:
+        # 用户未显式指定方向，根据目标价与当前价自动判断
+        if current_price is not None:
+            if target_price >= current_price:
+                target_price_direction = 1  # 止盈
+            else:
+                target_price_direction = -1  # 买入
+        else:
+            # 无法获取当前价，默认止盈
+            target_price_direction = 1
+    elif target_price is not None:
+        # 用户显式指定方向，使用用户值
+        target_price_direction = int(explicit_direction)
+    else:
+        target_price_direction = 1  # 无目标价时默认
 
     ok = add_stock(
         code=clean,
         name=name,
         threshold_percent=float(data.get('threshold_percent', 2.0)),
-        target_price=float(data['target_price']) if data.get('target_price') else None,
-        target_price_direction=int(data.get('target_price_direction', 1)),
+        target_price=target_price,
+        target_price_direction=target_price_direction,
     )
     if not ok:
         return jsonify({'ok': False, 'error': '股票已存在或添加失败'}), 400
@@ -200,12 +224,26 @@ def api_update_stock(code: str):
             # 软删除失败（可能已被删除），尝试直接新增
         log_stock_update("CODE_CHANGE", old_code, old, {"code": clean, **data})
 
+        # 自动判断目标价方向
+        new_target_price = float(data['target_price']) if data.get('target_price') is not None else old.get('target_price')
+        explicit_dir = data.get('target_price_direction')
+        if data.get('target_price') is not None and explicit_dir is None:
+            # 目标价变更且用户未指定方向，根据当前价自动判断
+            pd_new = get_stock_price(clean)
+            cur_price = pd_new.get('current_price') if pd_new else None
+            if cur_price is not None:
+                new_direction = 1 if new_target_price >= cur_price else -1
+            else:
+                new_direction = 1
+        else:
+            new_direction = int(explicit_dir) if explicit_dir is not None else int(old.get('target_price_direction', 1))
+
         add_stock(
             code=clean,
             name=data.get('name', old.get('name', '')),
             threshold_percent=float(data.get('threshold_percent', old.get('threshold_percent', 2.0))),
-            target_price=float(data['target_price']) if data.get('target_price') is not None else old.get('target_price'),
-            target_price_direction=int(data.get('target_price_direction', old.get('target_price_direction', 1))),
+            target_price=new_target_price,
+            target_price_direction=new_direction,
             monitor_enabled=int(data.get('monitor_enabled', old.get('monitor_enabled', 1))),
             rebuy_enabled=int(data.get('rebuy_enabled', old.get('rebuy_enabled', 0))),
             rebuy_date=data.get('rebuy_date', old.get('rebuy_date')),
@@ -225,6 +263,17 @@ def api_update_stock(code: str):
         old = get_stock(old_code)
         if old and old.get('rebuy_date'):
             clear_rebuy_notification(old_code, old['rebuy_date'])
+
+    # 若 target_price 变更且用户未指定方向，自动判断
+    if 'target_price' in data and data.get('target_price') is not None and 'target_price_direction' not in data:
+        old = get_stock(old_code)
+        pd_new = get_stock_price(old_code)
+        cur_price = pd_new.get('current_price') if pd_new else None
+        if cur_price is not None:
+            new_dir = 1 if data['target_price'] >= cur_price else -1
+        else:
+            new_dir = 1
+        data = {**data, 'target_price_direction': new_dir}
 
     ok = update_stock(old_code, **data)
     if ok:
