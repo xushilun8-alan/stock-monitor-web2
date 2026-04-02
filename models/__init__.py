@@ -53,6 +53,7 @@ def init_db():
             name TEXT NOT NULL DEFAULT '',
             threshold_percent REAL DEFAULT 2.0,
             target_price REAL,
+            target_price_direction INTEGER DEFAULT 1,
             monitor_enabled INTEGER DEFAULT 1,
             rebuy_enabled INTEGER DEFAULT 0,
             rebuy_date TEXT,
@@ -71,7 +72,8 @@ def init_db():
     ''')
     c.execute("INSERT OR IGNORE INTO config VALUES ('interval_seconds', '60')")
     # 字段迁移（已有数据不受影响）
-    for col, typ in [('is_deleted', 'INTEGER DEFAULT 0'), ('deleted_at', 'TEXT')]:
+    for col, typ in [('is_deleted', 'INTEGER DEFAULT 0'), ('deleted_at', 'TEXT'),
+                      ('target_price_direction', 'INTEGER DEFAULT 1')]:
         try:
             c.execute(f"ALTER TABLE stocks ADD COLUMN {col} {typ}")
         except Exception:
@@ -110,19 +112,26 @@ def get_stock(code: str) -> Optional[Dict[str, Any]]:
 
 
 def add_stock(code: str, name: str = '', threshold_percent: float = 2.0,
-              target_price: float = None, monitor_enabled: int = 1,
+              target_price: float = None, target_price_direction: int = 1,
+              monitor_enabled: int = 1,
               rebuy_enabled: int = 0, rebuy_date: str = None,
               rebuy_time: str = '09:00:00') -> bool:
-    """新增股票，返回 True 成功，False 失败（如代码已存在）"""
+    """新增股票，返回 True 成功，False 失败（如代码已存在）
+    
+    Args:
+        target_price_direction: 1=止盈监控(涨破触发), -1=买入监控(跌到触发)
+    """
     try:
         conn = _get_db()
         c = conn.cursor()
         c.execute('''
             INSERT INTO stocks (code, name, threshold_percent, target_price,
-                                monitor_enabled, rebuy_enabled, rebuy_date, rebuy_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                target_price_direction, monitor_enabled, rebuy_enabled,
+                                rebuy_date, rebuy_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (code.upper(), name, threshold_percent, target_price,
-              monitor_enabled, rebuy_enabled, rebuy_date, rebuy_time))
+              target_price_direction, monitor_enabled, rebuy_enabled,
+              rebuy_date, rebuy_time))
         conn.commit()
         conn.close()
         return True
@@ -133,10 +142,10 @@ def add_stock(code: str, name: str = '', threshold_percent: float = 2.0,
 def update_stock(code: str, **kwargs) -> bool:
     """
     更新股票字段（仅允许白名单字段）
-    白名单: name, threshold_percent, target_price,
+    白名单: name, threshold_percent, target_price, target_price_direction,
             monitor_enabled, rebuy_enabled, rebuy_date, rebuy_time
     """
-    allowed = ['name', 'threshold_percent', 'target_price',
+    allowed = ['name', 'threshold_percent', 'target_price', 'target_price_direction',
                'monitor_enabled', 'rebuy_enabled', 'rebuy_date', 'rebuy_time']
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:

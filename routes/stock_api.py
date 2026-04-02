@@ -135,6 +135,7 @@ def api_add_stock():
         name=name,
         threshold_percent=float(data.get('threshold_percent', 2.0)),
         target_price=float(data['target_price']) if data.get('target_price') else None,
+        target_price_direction=int(data.get('target_price_direction', 1)),
     )
     if not ok:
         return jsonify({'ok': False, 'error': '股票已存在或添加失败'}), 400
@@ -204,6 +205,7 @@ def api_update_stock(code: str):
             name=data.get('name', old.get('name', '')),
             threshold_percent=float(data.get('threshold_percent', old.get('threshold_percent', 2.0))),
             target_price=float(data['target_price']) if data.get('target_price') is not None else old.get('target_price'),
+            target_price_direction=int(data.get('target_price_direction', old.get('target_price_direction', 1))),
             monitor_enabled=int(data.get('monitor_enabled', old.get('monitor_enabled', 1))),
             rebuy_enabled=int(data.get('rebuy_enabled', old.get('rebuy_enabled', 0))),
             rebuy_date=data.get('rebuy_date', old.get('rebuy_date')),
