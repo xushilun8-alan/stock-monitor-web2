@@ -56,6 +56,19 @@
           min="0"
           placeholder="留空则不启用"
         />
+        <div class="hint" v-if="form.target_price">
+          系统将根据目标价与当前价自动判断方向
+        </div>
+      </div>
+
+      <!-- 目标价方向（可选） -->
+      <div class="form-row" v-if="form.target_price">
+        <label>目标价方向</label>
+        <select v-model.number="form.target_price_direction">
+          <option :value="1">止盈（涨到目标价触发）</option>
+          <option :value="-1">买入（跌到目标价触发）</option>
+        </select>
+        <div class="hint">系统已自动判断，可手动修改</div>
       </div>
 
       <!-- 重新买进提醒日期 -->
@@ -107,6 +120,7 @@ const defaultForm = () => ({
   name: '',
   threshold_percent: 2.0,
   target_price: null,
+  target_price_direction: 1,
   rebuy_date: '',
   rebuy_time: '09:00:00',
   rebuy_enabled: false,
@@ -148,6 +162,7 @@ watch(() => props.show, (val) => {
         name: s.name || '',
         threshold_percent: s.threshold_percent ?? 2.0,
         target_price: s.target_price ?? null,
+        target_price_direction: s.target_price_direction ?? 1,
         rebuy_date: s.rebuy_date || '',
         rebuy_time: s.rebuy_time || '09:00:00',
         rebuy_enabled: !!s.rebuy_enabled,
@@ -227,6 +242,7 @@ async function handleSubmit() {
     name: f.name,
     threshold_percent: f.threshold_percent,
     target_price: f.target_price || null,
+    target_price_direction: f.target_price_direction,
     rebuy_enabled: !!f.rebuy_date,
     rebuy_date: f.rebuy_date || null,
     rebuy_time: f.rebuy_time || '09:00:00',

@@ -48,7 +48,10 @@
             </span>
           </td>
           <td>
-            <span v-if="s.target_price" class="target-price">¥{{ s.target_price.toFixed(2) }}</span>
+            <span v-if="s.target_price" class="target-price">
+              ¥{{ s.target_price.toFixed(2) }}
+              <span class="target-dir">{{ s.target_price_direction === 1 ? '⬆止盈' : '⬇买入' }}</span>
+            </span>
             <span v-else style="color:var(--muted)">—</span>
           </td>
           <td>
