@@ -65,10 +65,12 @@ def check_and_notify(code: str, name: str, threshold_percent: float,
     """
     检查是否触发告警，发送飞书通知
 
-    触发条件:
+    触发条件（各自独立判断，可同时触发）:
     1. abs(change_percent) >= threshold_percent → 涨跌告警
-    2. current_price >= target_price → 目标价到达告警
-    3. change_percent <= -threshold_percent (当 target_price 设定时) → 跌破告警
+    2. current_price >= target_price → 止盈目标价到达告警
+    3. current_price <= target_price → 买入目标价到达告警
+
+    告警类型使用独立key，避免相互拦截。
     """
     global _notified_today
 
@@ -77,51 +79,66 @@ def check_and_notify(code: str, name: str, threshold_percent: float,
     change_percent = price_data['change_percent']
     current_price = price_data['current_price']
 
-    triggered = False
-    reason = ""
-
-    # 涨跌幅阈值检查
-    # threshold > 0：监控涨幅，change_percent >= threshold 时触发（上涨）
-    # threshold < 0：监控跌幅，change_percent <= threshold 时触发（下跌，绝对值比较）
+    # 分别判断涨跌告警和目标价告警，独立发送
+    # 涨跌告警 (threshold)
+    threshold_triggered = False
+    threshold_reason = ""
     if threshold_percent > 0:
-        # 正阈值：涨至 threshold% 或以上触发
         if change_percent >= threshold_percent:
-            triggered = True
-            reason = f"涨幅 {change_percent:+.2f}% 达阈值 {threshold_percent}%"
+            threshold_triggered = True
+            threshold_reason = f"涨幅 {change_percent:+.2f}% 达阈值 {threshold_percent}%"
     elif threshold_percent < 0:
-        # 负阈值：跌至 |threshold|% 或以上触发（下跌）
         if change_percent <= threshold_percent:
-            triggered = True
-            reason = f"跌幅 {change_percent:+.2f}% 达阈值 {abs(threshold_percent)}%"
+            threshold_triggered = True
+            threshold_reason = f"跌幅 {change_percent:+.2f}% 达阈值 {abs(threshold_percent)}%"
 
-    # 指定价格监控（独立于涨跌幅阈值）
-    # 方案B：自动推断方向
-    # - 如果当前价 >= target_price → 止盈监控（价格已高于目标，突破向上触发）
-    # - 如果当前价 < target_price → 买入监控（价格低于目标，跌到触发）
+    # 目标价告警 (target_price)，使用独立key
+    target_triggered = False
+    target_reason = ""
     if target_price and target_price > 0:
         if current_price >= target_price:
             # 价格已在目标价上方或相等 → 止盈监控，涨破触发
-            triggered = True
-            reason = f"股价 {current_price:.2f} 达到/突破目标价 {target_price:.2f}（止盈监控）"
+            target_triggered = True
+            target_reason = f"股价 {current_price:.2f} 达到/突破目标价 {target_price:.2f}（止盈监控）"
         else:
             # 价格在目标价下方 → 买入监控，跌到触发
             if current_price <= target_price:
-                triggered = True
-                reason = f"股价 {current_price:.2f} 跌至目标价 {target_price:.2f}（买入监控）"
+                target_triggered = True
+                target_reason = f"股价 {current_price:.2f} 跌至目标价 {target_price:.2f}（买入监控）"
 
-    if triggered and code not in _notified_today:
-        ok = send_alert(
-            stock_code=code,
-            stock_name=name or code,
-            current_price=current_price,
-            change_percent=change_percent,
-            opening_price=price_data['opening_price'],
-            high=price_data['high'],
-            low=price_data['low'],
-            reason=reason,
-        )
-        if ok:
-            _notified_today.add(code)
+    # 发送涨跌告警
+    if threshold_triggered:
+        notif_key = f"{code}_threshold"
+        if notif_key not in _notified_today:
+            ok = send_alert(
+                stock_code=code,
+                stock_name=name or code,
+                current_price=current_price,
+                change_percent=change_percent,
+                opening_price=price_data['opening_price'],
+                high=price_data['high'],
+                low=price_data['low'],
+                reason=threshold_reason,
+            )
+            if ok:
+                _notified_today.add(notif_key)
+
+    # 发送目标价告警（独立于涨跌告警）
+    if target_triggered:
+        notif_key = f"{code}_target"
+        if notif_key not in _notified_today:
+            ok = send_alert(
+                stock_code=code,
+                stock_name=name or code,
+                current_price=current_price,
+                change_percent=change_percent,
+                opening_price=price_data['opening_price'],
+                high=price_data['high'],
+                low=price_data['low'],
+                reason=target_reason,
+            )
+            if ok:
+                _notified_today.add(notif_key)
 
 
 def check_rebuy_reminders():
