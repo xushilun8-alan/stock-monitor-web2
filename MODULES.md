@@ -85,9 +85,9 @@ stock-monitor-web2/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/stocks` | 获取所有正常股票（含实时价格） |
-| POST | `/api/stocks` | 添加股票 |
+| POST | `/api/stocks` | 添加股票（`target_price_direction`不传时后端自动推断：目标价≥当前价→1，＜当前价→-1） |
 | GET | `/api/stocks/deleted` | 获取所有已删除股票 |
-| PUT | `/api/stocks/<code>` | 更新股票（含代码变更） |
+| PUT | `/api/stocks/<code>` | 更新股票（含代码变更）；`target_price`变更且`target_price_direction`不传时自动推断方向 |
 | DELETE | `/api/stocks/<code>` | 软删除（is_deleted=1） |
 | POST | `/api/stocks/<code>/restore` | 恢复已删除股票 |
 | DELETE | `/api/stocks/<code>/destroy` | 彻底删除（永久移除） |
@@ -109,6 +109,7 @@ stock-monitor-web2/
 | `name` | TEXT | 股票名称 |
 | `threshold_percent` | REAL | 触发通知涨跌幅阈值（正数=涨幅，负数=跌幅） |
 | `target_price` | REAL | 目标价格（NULL=不启用） |
+| `target_price_direction` | INTEGER | 1=止盈监控（涨破目标价触发），-1=买入监控（跌到目标价触发）；新增/修改时若前端未传则后端自动推断 |
 | `monitor_enabled` | INTEGER | 0=暂停监控，1=启用监控 |
 | `rebuy_enabled` | INTEGER | 0=关闭，1=启用重新买进提醒 |
 | `rebuy_date` | TEXT | 重新买进提醒日期（YYYY-MM-DD） |

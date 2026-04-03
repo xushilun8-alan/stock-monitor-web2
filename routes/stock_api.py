@@ -134,17 +134,14 @@ def api_add_stock():
     target_price = float(data['target_price']) if data.get('target_price') else None
     
     # 自动判断目标价方向：
-    # - 用户未显式指定 direction 时，根据 target_price 与当前价自动判断
+    # - 用户未显式指定 direction 时（字段不存在或为 None），根据 target_price 与当前价自动判断
     # - target_price >= 当前价 → 止盈监控(1)
     # - target_price < 当前价 → 买入监控(-1)
     explicit_direction = data.get('target_price_direction')
     if target_price is not None and explicit_direction is None:
         # 用户未显式指定方向，根据目标价与当前价自动判断
         if current_price is not None:
-            if target_price >= current_price:
-                target_price_direction = 1  # 止盈
-            else:
-                target_price_direction = -1  # 买入
+            target_price_direction = 1 if float(target_price) >= current_price else -1
         else:
             # 无法获取当前价，默认止盈
             target_price_direction = 1
@@ -270,7 +267,7 @@ def api_update_stock(code: str):
         pd_new = get_stock_price(old_code)
         cur_price = pd_new.get('current_price') if pd_new else None
         if cur_price is not None:
-            new_dir = 1 if data['target_price'] >= cur_price else -1
+            new_dir = 1 if float(data['target_price']) >= cur_price else -1
         else:
             new_dir = 1
         data = {**data, 'target_price_direction': new_dir}
