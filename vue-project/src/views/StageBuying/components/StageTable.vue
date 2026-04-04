@@ -54,19 +54,37 @@
           <td class="stage-num">第{{ stage.stage_number }}阶段</td>
           <td>{{ stage.amplitude != null ? stage.amplitude.toFixed(8) : '—' }}</td>
           <td>{{ stage.buy_price != null ? stage.buy_price.toFixed(4) : '—' }}</td>
-          <td>{{ stage.shares != null ? stage.shares.toLocaleString() : '—' }}</td>
+          <!-- 股数：点击编辑，失焦/回车保存 -->
+          <td class="editable-shares" @click="startEditShares(stage)">
+            <input
+              v-if="editingStageId === stage.id"
+              ref="sharesInputRef"
+              v-model.number="editSharesValue"
+              type="number"
+              min="1"
+              class="shares-input"
+              @blur="saveShares(stage)"
+              @keydown.enter="saveShares(stage)"
+              @click.stop
+            />
+            <span v-else class="shares-display">{{ stage.shares != null ? stage.shares.toLocaleString() : '—' }}</span>
+          </td>
           <td>{{ formatMoney(stage.buy_amount) }}</td>
-          <td :class="stage.floor_loss != null && stage.floor_loss > 0 ? 'loss-val' : ''">
+          <!-- 底价亏损：亏损(<0)时绿色 -->
+          <td :class="stage.floor_loss != null && stage.floor_loss < 0 ? 'profit-val' : ''">
             {{ stage.floor_loss != null ? formatNum(stage.floor_loss) : '—' }}
           </td>
-          <td :class="stage.loss_rate != null && stage.loss_rate > 0 ? 'loss-val' : ''">
+          <!-- 亏损率：亏损(<0)时绿色 -->
+          <td :class="stage.loss_rate != null && stage.loss_rate < 0 ? 'profit-val' : ''">
             {{ stage.loss_rate != null ? formatPct(stage.loss_rate) : '—' }}
           </td>
           <td>{{ stage.target_income != null ? formatMoney(stage.target_income) : '—' }}</td>
-          <td :class="stage.expected_return != null && stage.expected_return > 0 ? 'profit-val' : ''">
+          <!-- 期望收益：盈利(>0)时红色 -->
+          <td :class="stage.expected_return != null && stage.expected_return > 0 ? 'loss-val' : ''">
             {{ stage.expected_return != null ? formatMoney(stage.expected_return) : '—' }}
           </td>
-          <td :class="stage.return_rate != null && stage.return_rate > 0 ? 'profit-val' : ''">
+          <!-- 收益率：盈利(>0)时红色 -->
+          <td :class="stage.return_rate != null && stage.return_rate > 0 ? 'loss-val' : ''">
             {{ stage.return_rate != null ? formatPct(stage.return_rate) : '—' }}
           </td>
           <td>
@@ -101,14 +119,48 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, nextTick } from 'vue'
 import Charts from './Charts.vue'
 
 const props = defineProps({
   stages: { type: Array, default: () => [] },
   currentPrice: { type: Number, default: null },
 })
-defineEmits(['toggle'])
+const emit = defineEmits(['toggle', 'update-shares'])
+
+// 股数列编辑状态
+const editingStageId = ref(null)
+const editSharesValue = ref(null)
+const sharesInputRef = ref(null)
+
+async function startEditShares(stage) {
+  if (stage.status === 'executed') return // 已执行阶段不允许编辑
+  editingStageId.value = stage.id
+  editSharesValue.value = stage.shares
+  await nextTick()
+  // v-for 中 ref 是数组，取当前编辑行对应的 DOM 元素
+  const el = Array.isArray(sharesInputRef.value) ? sharesInputRef.value[0] : sharesInputRef.value
+  el?.focus()
+  el?.select()
+}
+
+async function saveShares(stage) {
+  if (editingStageId.value !== stage.id) return
+  const newShares = editSharesValue.value
+  if (newShares === null || newShares === '' || newShares <= 0 || !Number.isInteger(Number(newShares))) {
+    cancelEdit()
+    return
+  }
+  if (newShares !== stage.shares) {
+    emit('update-shares', { stageId: stage.id, shares: Number(newShares) })
+  }
+  cancelEdit()
+}
+
+function cancelEdit() {
+  editingStageId.value = null
+  editSharesValue.value = null
+}
 
 // 当前价格所在阶段
 function isCurrentStage(stage) {
@@ -220,6 +272,22 @@ function formatPct(v) {
 
 .profit-val { color: #43a047; }
 .loss-val { color: #e53935; }
+
+/* 股数可编辑样式 */
+.editable-shares { cursor: pointer; }
+.editable-shares:hover .shares-display { color: #38bdf8; text-decoration: underline; }
+.shares-input {
+  width: 80px;
+  background: #1a2332;
+  border: 1px solid #38bdf8;
+  border-radius: 3px;
+  color: #f1f5f9;
+  padding: 2px 4px;
+  text-align: right;
+  font-size: 12px;
+  outline: none;
+}
+.shares-display { user-select: none; }
 
 .btn-exec, .btn-cancel {
   padding: 2px 8px;

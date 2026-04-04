@@ -19,6 +19,7 @@ from .service import (
     calculate_stages, create_stock_with_stages, update_stock_with_stages,
     get_stocks_with_current_info, refresh_stock_price, refresh_all_prices,
     toggle_stage_exec, check_and_trigger_stages, get_stock_summary,
+    recalculate_single_stage,
 )
 from .utils import (
     send_stage_trigger_notification, send_test_notification,
@@ -226,6 +227,26 @@ def api_toggle_exec(stage_id: int):
     if not ok:
         return _fail('状态切换失败，可能已是最终状态')
     return _ok({'status': new_status})
+
+
+@stage_buying_bp.route('/stages/<int:stage_id>/shares', methods=['PUT'])
+def api_update_stage_shares(stage_id: int):
+    """更新单阶段股数并重算关联指标"""
+    data = request.get_json()
+    new_shares = data.get('shares')
+    if new_shares is None:
+        return _fail('缺少 shares 字段')
+    try:
+        new_shares = int(new_shares)
+        if new_shares <= 0:
+            return _fail('股数必须大于0')
+    except (ValueError, TypeError):
+        return _fail('shares 必须为正整数')
+
+    stage = recalculate_single_stage(stage_id, new_shares)
+    if stage is None:
+        return _fail('阶段不存在', 404)
+    return _ok(stage)
 
 
 # ── 配置 ────────────────────────────────────────────────

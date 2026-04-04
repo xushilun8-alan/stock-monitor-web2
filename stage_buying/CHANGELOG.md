@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1.0] - 2026-04-04
+
+### Added
+
+- **两项汇总统计指标**
+  - `profit_loss_ratio`（盈利亏损比）= `-全部阶段汇总期望收益 / 全部阶段汇总底价亏损`
+  - `return_cost_ratio`（收益成本比）= `(全部阶段汇总期望收益 / 全部阶段汇总金额) × 100%`
+  - backend: `service.py::get_stocks_with_current_info()` 每只股票附加两项指标；`get_stock_summary()` 新增两字段
+  - frontend: 股票卡片 `card-brief` 新增两列展示，数据变更时由 Pinia store 的 `loadStocks()` 自动刷新
+
 ## [1.0.0] - 2026-04-04
 
 ### Added

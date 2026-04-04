@@ -108,7 +108,7 @@ stage_buying/
 | PUT | `/api/stage-buying/stocks/<id>` | 更新股票（含重新计算阶段） |
 | DELETE | `/api/stage-buying/stocks/<id>` | 删除股票（软删除） |
 | POST | `/api/stage-buying/stocks/calculate` | 仅计算阶段（不保存） |
-| GET | `/api/stage-buying/stocks/<id>/summary` | 获取阶段汇总（触发进度） |
+| GET | `/api/stage-buying/stocks/<id>/summary` | 获取阶段汇总（含盈利亏损比、收益成本比） |
 | POST | `/api/stage-buying/stocks/<id>/toggle/<stage_id>` | 切换阶段执行状态 |
 | POST | `/api/stage-buying/stocks/<id>/trigger` | 手动触发检查（模拟） |
 | GET | `/api/stage-buying/trigger-records` | 查询触发记录 |

@@ -53,6 +53,11 @@ export function toggleStageExec(stageId) {
   return api.put(`/stages/${stageId}/exec`).then(r => r.data)
 }
 
+// 更新单阶段股数（实时重算）
+export function updateStageShares(stageId, shares) {
+  return api.put(`/stages/${stageId}/shares`, { shares }).then(r => r.data)
+}
+
 // 获取触发记录
 export function getTriggerRecords(params = {}) {
   return api.get('/trigger-records', { params }).then(r => r.data)

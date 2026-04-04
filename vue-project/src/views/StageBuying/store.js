@@ -67,6 +67,14 @@ export const useStageBuyingStore = defineStore('stageBuying', () => {
     return res
   }
 
+  async function updateStageShares(stageId, shares) {
+    const res = await api.updateStageShares(stageId, shares)
+    if (res.ok) {
+      await loadStocks()
+    }
+    return res
+  }
+
   async function loadRecords() {
     const res = await api.getTriggerRecords(recordFilter.value)
     if (res.ok) {
@@ -99,7 +107,7 @@ export const useStageBuyingStore = defineStore('stageBuying', () => {
     showRecordModal, triggerRecords, recordFilter,
     stockCount,
     loadStocks, addStock, updateStock, removeStock,
-    refreshPrices, toggleStageExec,
+    refreshPrices, toggleStageExec, updateStageShares,
     loadRecords, loadConfig, saveConfig, testFeishu,
   }
 })

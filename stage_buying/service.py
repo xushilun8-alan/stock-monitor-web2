@@ -64,6 +64,10 @@ def calculate_stages(params: Dict[str, Any]) -> List[Dict[str, Any]]:
 
         amplitude = _round8(amplitude)
 
+        # 幅度上限：若计算值大于最小幅度设定值，强制取最小幅度
+        if n > 1 and amplitude > min_amplitude:
+            amplitude = _round8(min_amplitude)
+
         # 2. 计算买入单价
         if n == 1:
             buy_price = initial_price
@@ -80,13 +84,15 @@ def calculate_stages(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         buy_amount = _round8(buy_price * shares)
 
         # 4. 底价亏损
+        # 公式：阶段1 = 底价*初始股数-当阶金额；非阶段1 = 底价*每阶股数-当阶金额
+        # 结果<0表示亏损（底价比当前买入价高），>0表示盈利
         floor_loss = None
         loss_rate = None
         if floor_price is not None:
             if n == 1:
-                floor_loss = buy_amount - floor_price * initial_shares
+                floor_loss = floor_price * initial_shares - buy_amount
             else:
-                floor_loss = buy_amount - floor_price * per_stage_shares
+                floor_loss = floor_price * per_stage_shares - buy_amount
             floor_loss = _round8(floor_loss)
             if buy_amount != 0:
                 loss_rate = _round8(floor_loss / buy_amount * 100)
@@ -231,6 +237,22 @@ def get_stocks_with_current_info() -> List[Dict[str, Any]]:
         s['total_investment'] = _round8(total_amount)
         s['executed_investment'] = _round8(executed_amount)
 
+        # ── 新增两项汇总统计（全部阶段，非仅已执行）────────────────────
+        total_expected = sum((st['expected_return'] or 0) for st in stages)
+        total_floor_loss = sum((st['floor_loss'] or 0) for st in stages)
+
+        # 盈利亏损比 = -全部阶段汇总期望收益 / 全部阶段汇总底价亏损
+        if total_floor_loss != 0:
+            s['profit_loss_ratio'] = _round8(-total_expected / total_floor_loss)
+        else:
+            s['profit_loss_ratio'] = None
+
+        # 收益成本比 = (全部阶段汇总期望收益 / 全部阶段汇总金额) × 100%
+        if total_amount != 0:
+            s['return_cost_ratio'] = _round8(total_expected / total_amount * 100)
+        else:
+            s['return_cost_ratio'] = None
+
     return stocks
 
 
@@ -274,6 +296,63 @@ def toggle_stage_exec(stage_id: int) -> Tuple[bool, str]:
         return ok, 'triggered'
     else:
         return False, stage['status']
+
+
+def recalculate_single_stage(stage_id: int, new_shares: int) -> Optional[Dict[str, Any]]:
+    """
+    仅更新单阶段股数并重算关联指标
+    buy_price/amplitude/target_price/floor_price 等基础参数不变
+    返回更新后的 stage dict
+    """
+    stage = models.get_stage_detail_by_id(stage_id)
+    if not stage:
+        return None
+
+    stock = models.get_stock_by_id(stage['stock_id'])
+    if not stock:
+        return None
+
+    # buy_price 不随 shares 变化（由 amplitude 计算决定）
+    buy_price = stage['buy_price']
+    buy_amount = _round8(buy_price * new_shares)
+
+    floor_price = stock['floor_price']
+    target_price = stock['target_price']
+
+    # 底价亏损 = 底价 * 当阶股数 - 当阶金额（亏损为负）
+    # 公式：阶段1 = 底价*初始股数-当阶金额；非阶段1 = 底价*每阶股数-当阶金额
+    floor_loss = None
+    loss_rate = None
+    if floor_price is not None:
+        floor_loss = floor_price * new_shares - buy_amount
+        floor_loss = _round8(floor_loss)
+        if buy_amount != 0:
+            loss_rate = _round8(floor_loss / buy_amount * 100)
+
+    # 目标收益 / 期望收益 / 收益率（统一用当阶实际股数 new_shares）
+    target_income = None
+    expected_return = None
+    return_rate = None
+    if target_price is not None:
+        target_income = _round8(target_price * new_shares)
+        expected_return = _round8(target_income - buy_amount)
+        if buy_amount != 0:
+            return_rate = _round8(expected_return / buy_amount * 100)
+
+    # 写入数据库
+    models.update_stage_shares(stage_id, new_shares)
+    conn = models._get_db()
+    c = conn.cursor()
+    c.execute('''
+        UPDATE stage_details SET
+            buy_amount = ?, floor_loss = ?, loss_rate = ?,
+            target_income = ?, expected_return = ?, return_rate = ?
+        WHERE id = ?
+    ''', (buy_amount, floor_loss, loss_rate, target_income, expected_return, return_rate, stage_id))
+    conn.commit()
+    conn.close()
+
+    return models.get_stage_detail_by_id(stage_id)
 
 
 def check_and_trigger_stages(stock_id: int) -> List[Dict[str, Any]]:
@@ -327,6 +406,19 @@ def get_stock_summary(stock_id: int) -> Dict[str, Any]:
     total_expected = sum((st['expected_return'] or 0) for st in stages if st['status'] == 'executed')
     total_floor_loss = sum((st['floor_loss'] or 0) for st in stages if st['status'] == 'executed')
 
+    # 全部阶段汇总（用于盈利亏损比 & 收益成本比）
+    all_expected = sum((st['expected_return'] or 0) for st in stages)
+    all_floor_loss = sum((st['floor_loss'] or 0) for st in stages)
+
+    if all_floor_loss != 0:
+        profit_loss_ratio = _round8(-all_expected / all_floor_loss)
+    else:
+        profit_loss_ratio = None
+    if total_amount != 0:
+        return_cost_ratio = _round8(all_expected / total_amount * 100)
+    else:
+        return_cost_ratio = None
+
     return {
         'total_stages': len(stages),
         'executed_stages': sum(1 for st in stages if st['status'] == 'executed'),
@@ -335,4 +427,6 @@ def get_stock_summary(stock_id: int) -> Dict[str, Any]:
         'executed_investment': _round8(executed_amount),
         'total_expected_return': _round8(total_expected),
         'total_floor_loss': _round8(total_floor_loss),
+        'profit_loss_ratio': profit_loss_ratio,
+        'return_cost_ratio': return_cost_ratio,
     }

@@ -78,6 +78,16 @@
             <span class="brief-label">已执行金额</span>
             <span class="brief-value executed">{{ formatMoney(stock.executed_investment) }}</span>
           </div>
+          <div class="brief-item">
+            <span class="brief-label">盈利亏损比</span>
+            <span class="brief-value" :class="stock.profit_loss_ratio != null && stock.profit_loss_ratio < 0 ? 'down' : ''">
+              {{ stock.profit_loss_ratio != null ? stock.profit_loss_ratio.toFixed(4) : '—' }}
+            </span>
+          </div>
+          <div class="brief-item">
+            <span class="brief-label">收益成本比</span>
+            <span class="brief-value">{{ stock.return_cost_ratio != null ? stock.return_cost_ratio.toFixed(2) + '%' : '—' }}</span>
+          </div>
         </div>
 
         <!-- 阶段详情展开 -->
@@ -86,6 +96,7 @@
             :stages="stock.stages"
             :current-price="stock.current_price"
             @toggle="handleToggleExec"
+            @update-shares="(payload) => handleUpdateShares(stock.id, payload)"
           />
         </div>
 
@@ -191,6 +202,10 @@ async function onFormSaved() {
 
 async function handleToggleExec(stageId) {
   await store.toggleStageExec(stageId)
+}
+
+async function handleUpdateShares(stockId, { stageId, shares }) {
+  await store.updateStageShares(stageId, shares)
 }
 
 function confirmDelete(stock) {

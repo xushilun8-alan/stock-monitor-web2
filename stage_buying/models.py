@@ -247,6 +247,16 @@ def update_stage_status(stage_id: int, status: str) -> bool:
     return ok
 
 
+def update_stage_shares(stage_id: int, shares: int) -> bool:
+    conn = _get_db()
+    c = conn.cursor()
+    c.execute('UPDATE stage_details SET shares = ? WHERE id = ?', (shares, stage_id))
+    conn.commit()
+    ok = c.rowcount > 0
+    conn.close()
+    return ok
+
+
 # ── 触发记录 CRUD ─────────────────────────────────────────
 
 def get_trigger_records(stock_id: int = None,
