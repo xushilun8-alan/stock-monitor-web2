@@ -28,6 +28,15 @@ stock-monitor-web2/
 │   ├── stock_api.py            # 所有 /api/* 接口
 │   └── ROUTES.md              # 本模块详细文档
 │
+├── stage_buying/              # 分阶段买入策略模块
+│   ├── __init__.py            # Blueprint 注册
+│   ├── models.py             # SQLite 模型（stage_stocks/stage_details/trigger_records）
+│   ├── routes.py             # RESTful API（Blueprint）
+│   ├── service.py            # 核心业务逻辑（calculate_stages 算法）
+│   ├── utils.py              # 飞书通知 + Excel 导入导出
+│   ├── MODULES.md             # 本模块详细文档
+│   └── CHANGELOG.md           # 本模块变更记录
+│
 ├── vue-project/               # Vue 3 前端（SPA）
 │   ├── src/
 │   │   ├── main.js            # Vue 入口
@@ -79,6 +88,7 @@ stock-monitor-web2/
 | **routes/stock_api** | RESTful API（Blueprint） | 见下方接口清单 |
 | **vue-project** | Vue 3 SPA 前端（替代旧模板） | Pinia + Composables + 组件化 |
 | **app** | 页面渲染路由 + 应用启动 | `app.py` 启动 Flask，Vue 构建后集成 |
+| **stage_buying** | 分阶段买入策略模块 | 阶段计算、价格监控、飞书通知、Excel 导入导出 |
 
 ## API 接口清单
 
