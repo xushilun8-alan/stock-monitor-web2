@@ -34,6 +34,11 @@ def calculate_stages(params: Dict[str, Any]) -> List[Dict[str, Any]]:
         min_amplitude: 最小幅度（保留字段）
         amplitude_multiplier: 幅度乘数
         floor_price: 底价（可None）
+
+    底价逻辑：
+        若 floor_price 不为空，使用数据库已有底价计算 floor_loss
+        若 floor_price 为空，自动取最后一阶段单价作为临时底价计算 floor_loss
+        临时底价仅用于计算，不写入数据库
     """
     initial_price = float(params['initial_price'])
     initial_shares = int(params['initial_shares'])
@@ -47,12 +52,12 @@ def calculate_stages(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     amplitude_multiplier = float(params.get('amplitude_multiplier', 1.001))
     floor_price = float(params['floor_price']) if params.get('floor_price') is not None else None
 
+    # ── 第一遍：计算所有阶段的基础数据（buy_price/shares/buy_amount）────────────────
     stages = []
     prev_buy_price = initial_price
     prev_amplitude = None
 
     for n in range(1, stage_count + 1):
-        # 1. 计算幅度
         if n == 1:
             amplitude = 1.0
         elif n == 2:
@@ -63,41 +68,62 @@ def calculate_stages(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             amplitude = prev_amplitude * (amplitude_multiplier ** (n - 2))
 
         amplitude = _round8(amplitude)
-
-        # 幅度上限：若计算值大于最小幅度设定值，强制取最小幅度
         if n > 1 and amplitude > min_amplitude:
             amplitude = _round8(min_amplitude)
 
-        # 2. 计算买入单价
         if n == 1:
             buy_price = initial_price
         else:
             buy_price = prev_buy_price * amplitude
-
         buy_price = _round8(buy_price)
 
-        # 3. 股数与金额
         if n == 1:
             shares = initial_shares
         else:
             shares = per_stage_shares
         buy_amount = _round8(buy_price * shares)
 
-        # 4. 底价亏损
-        # 公式：阶段1 = 底价*初始股数-当阶金额；非阶段1 = 底价*每阶股数-当阶金额
-        # 结果<0表示亏损（底价比当前买入价高），>0表示盈利
+        stages.append({
+            'stage_number': n,
+            'amplitude': amplitude,
+            'buy_price': buy_price,
+            'shares': shares,
+            'buy_amount': buy_amount,
+            'status': 'untriggered',
+        })
+
+        prev_buy_price = buy_price
+        prev_amplitude = amplitude
+
+    # ── 第二遍：计算 floor_loss（使用真实底价或临时底价）─────────────────────────
+    # 若 floor_price 为空，取最后一阶段的单价作为临时底价（仅用于计算，不保存）
+    effective_floor_price = floor_price
+    if effective_floor_price is None:
+        effective_floor_price = stages[-1]['buy_price'] if stages else None
+
+    for s in stages:
+        n = s['stage_number']
+        buy_amount = s['buy_amount']
+
         floor_loss = None
         loss_rate = None
-        if floor_price is not None:
+        if effective_floor_price is not None:
             if n == 1:
-                floor_loss = floor_price * initial_shares - buy_amount
+                floor_loss = effective_floor_price * initial_shares - buy_amount
             else:
-                floor_loss = floor_price * per_stage_shares - buy_amount
+                floor_loss = effective_floor_price * per_stage_shares - buy_amount
             floor_loss = _round8(floor_loss)
             if buy_amount != 0:
                 loss_rate = _round8(floor_loss / buy_amount * 100)
 
-        # 5. 目标收益
+        s['floor_loss'] = floor_loss
+        s['loss_rate'] = loss_rate
+
+    # ── 第三遍：计算目标收益 ───────────────────────────────────────────────────
+    for s in stages:
+        n = s['stage_number']
+        buy_amount = s['buy_amount']
+
         target_income = None
         expected_return = None
         return_rate = None
@@ -111,22 +137,9 @@ def calculate_stages(params: Dict[str, Any]) -> List[Dict[str, Any]]:
             if buy_amount != 0:
                 return_rate = _round8(expected_return / buy_amount * 100)
 
-        stages.append({
-            'stage_number': n,
-            'amplitude': amplitude,
-            'buy_price': buy_price,
-            'shares': shares,
-            'buy_amount': buy_amount,
-            'floor_loss': floor_loss,
-            'loss_rate': loss_rate,
-            'target_income': target_income,
-            'expected_return': expected_return,
-            'return_rate': return_rate,
-            'status': 'untriggered',
-        })
-
-        prev_buy_price = buy_price
-        prev_amplitude = amplitude
+        s['target_income'] = target_income
+        s['expected_return'] = expected_return
+        s['return_rate'] = return_rate
 
     return stages
 

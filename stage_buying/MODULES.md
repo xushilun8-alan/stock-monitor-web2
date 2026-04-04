@@ -59,9 +59,19 @@ stage_buying/
 | `target_price` | REAL | 目标价 |
 | `min_amplitude` | REAL | 最小幅度 |
 | `amplitude_multiplier` | REAL | 幅度乘数 |
-| `floor_price` | REAL | 底价 |
+| `floor_price` | REAL | 底价（可 null）。若为 null，计算时会自动取最后一阶段单价作为临时底价用于 floor_loss 计算，但不会写入数据库 |
 | `created_at` | TEXT | 创建时间 |
 | `updated_at` | TEXT | 更新时间 |
+
+## 底价计算逻辑
+
+当 `floor_price` 为空（null）时：
+1. **触发时机**：新增股票或编辑股票保存时
+2. **临时底价获取**：取本次保存操作中 `总阶段数`（stage_count）对应的第 N 阶段 `单价`（buy_price）
+3. **计算应用**：使用此临时底价计算所有阶段的 `floor_loss` 和 `loss_rate`
+4. **关键约束**：临时底价**仅计算，不保存**——数据库原值保持为空（null），不影响后续编辑
+
+**优先级**：数据库已有底价 > 动态计算临时底价
 
 ### stage_details（阶段详情表）
 
