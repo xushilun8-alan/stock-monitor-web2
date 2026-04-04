@@ -45,6 +45,9 @@
       @delete="openDeleteConfirm"
     />
 
+    <!-- 阶段买入策略 -->
+    <StageBuyingView v-if="activeTab === 'stage-buying'" />
+
     <!-- 回收站 -->
     <DeletedTable
       v-if="activeTab === 'deleted'"
@@ -97,13 +100,14 @@ import StockModal from '@/components/StockModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import DestroyModal from '@/components/DestroyModal.vue'
 import ToastNotification from '@/components/ToastNotification.vue'
+import StageBuyingView from '@/views/StageBuying/index.vue'
 
 // ── Store ───────────────────────────────────────────────
 const store = useStockStore()
 const { toast } = useToast()
 
 // ── Tab 状态 ─────────────────────────────────────────────
-/** @type {import('vue').Ref<'monitor'|'deleted'>} */
+/** @type {import('vue').Ref<'monitor'|'stage-buying'|'deleted'>} */
 const activeTab = ref('monitor')
 
 // ── 弹窗状态 ─────────────────────────────────────────────

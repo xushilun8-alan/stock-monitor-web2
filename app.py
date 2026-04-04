@@ -57,6 +57,10 @@ def create_app():
     # 注册 API 路由
     app.register_blueprint(stock_bp)
 
+    # 注册阶段买入模块路由
+    from stage_buying import stage_buying_bp
+    app.register_blueprint(stage_buying_bp)
+
     # 启动后台监控
     start_monitor()
 

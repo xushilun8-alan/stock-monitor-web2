@@ -26,3 +26,6 @@ logs/*
 .idea/
 # test
 data/.notif.lock
+启动/flask.pid
+启动/vue.pid
+data/stage_buying.db

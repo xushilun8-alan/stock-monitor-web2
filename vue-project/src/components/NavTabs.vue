@@ -9,6 +9,13 @@
     </button>
     <button
       class="nav-tab"
+      :class="{ active: activeTab === 'stage-buying' }"
+      @click="$emit('change', 'stage-buying')"
+    >
+      阶段买入
+    </button>
+    <button
+      class="nav-tab"
       :class="{ active: activeTab === 'deleted' }"
       @click="$emit('change', 'deleted')"
     >
@@ -20,7 +27,7 @@
 
 <script setup>
 /**
- * @prop {string} activeTab - 'monitor' | 'deleted'
+ * @prop {string} activeTab - 'monitor' | 'stage-buying' | 'deleted'
  * @prop {number} deletedCount
  */
 defineProps({

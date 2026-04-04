@@ -36,11 +36,32 @@ from typing import Optional, List, Dict, Any
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'stocks.db')
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
+# 追踪当前连接，换路径前先关闭旧连接避免 SQLite file is locked
+_conn = None
+
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    global _conn
+    if _conn is not None:
+        try:
+            _conn.close()
+        except Exception:
+            pass
+        _conn = None
+    _conn = sqlite3.connect(DB_PATH, timeout=10)
+    _conn.row_factory = sqlite3.Row
+    return _conn
+
+
+def _close_db():
+    """关闭当前连接（测试 fixture 清理用）"""
+    global _conn
+    if _conn is not None:
+        try:
+            _conn.close()
+        except Exception:
+            pass
+        _conn = None
 
 
 def init_db():
