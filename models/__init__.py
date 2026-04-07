@@ -180,6 +180,11 @@ def update_stock(code: str, **kwargs) -> bool:
     conn.commit()
     ok = c.rowcount > 0
     conn.close()
+    # 修改后自动重置该股票的当日通知限制，允许重新触发
+    if ok:
+        # 延迟导入避免循环：models -> feishu_notifier -> monitor -> models
+        from services.feishu_notifier import reset_stock_notifications as _reset_stock_notif
+        _reset_stock_notif(code)
     return ok
 
 

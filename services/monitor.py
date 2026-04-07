@@ -45,6 +45,7 @@ from services.stock_data import get_stock_price
 from models import get_monitor_stocks, get_deleted_stocks, get_interval, update_stock
 from services.feishu_notifier import clear_rebuy_notification, _try_mark_notified
 from services.feishu_notifier import send_alert, send_rebuy_reminder
+from services.feishu_notifier import register_inmemory_reset_callback
 
 # 飞书通知去重：当日已通知过的股票代码集合（内存缓存）
 _notified_today: set = set()
@@ -254,6 +255,17 @@ class MonitorLoop:
         if self._thread:
             self._thread.join(timeout=5)
 
+
+def _reset_inmemory_cache(stock_code: str):
+    """重置指定股票在内存缓存中的通知记录（供 feishu_notifier 回调使用）"""
+    global _notified_today
+    keys_to_remove = [k for k in _notified_today if k.startswith(f"{stock_code}_")]
+    for k in keys_to_remove:
+        _notified_today.discard(k)
+
+
+# 注册内存缓存重置回调
+register_inmemory_reset_callback(_reset_inmemory_cache)
 
 # 全局单例
 _monitor = MonitorLoop()

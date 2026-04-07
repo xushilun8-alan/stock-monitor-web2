@@ -63,7 +63,7 @@ from models import (
     get_deleted_stocks,
 )
 from services.stock_data import get_stock_price
-from services.feishu_notifier import send_test, clear_rebuy_notification
+from services.feishu_notifier import send_test, clear_rebuy_notification, reset_stock_notifications
 import sys
 sys.path.insert(0, __file__.rsplit('/', 2)[0])
 try:
@@ -215,6 +215,8 @@ def api_update_stock(code: str):
             return jsonify({'ok': False, 'error': '原股票不存在'}), 404
 
         # 代码变更流程：删除旧记录 + 插入新记录
+        # 先重置旧代码的通知状态（避免通知状态残留）
+        reset_stock_notifications(old_code)
         del_ok = delete_stock(old_code)
         if not del_ok:
             log_api_error("UPDATE stock", f"Failed to delete old stock: {old_code}")
@@ -260,6 +262,11 @@ def api_update_stock(code: str):
         old = get_stock(old_code)
         if old and old.get('rebuy_date'):
             clear_rebuy_notification(old_code, old['rebuy_date'])
+
+    # 若 threshold_percent 或 target_price 变更，重置通知缓存（避免用旧阈值/旧目标价的通知状态拦截新品种提醒）
+    alert_fields = {'threshold_percent', 'target_price', 'target_price_direction'}
+    if alert_fields & set(data.keys()):
+        reset_stock_notifications(old_code)
 
     # 若 target_price 变更且用户未指定方向，自动判断
     if 'target_price' in data and data.get('target_price') is not None and 'target_price_direction' not in data:

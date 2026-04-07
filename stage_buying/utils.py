@@ -6,13 +6,56 @@
 
 import os
 import json
-import subprocess
+import time
+import requests
 import openpyxl
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from io import BytesIO
 
-FEISHU_TARGET = "ou_268fcd21ee877df7e4d16305a4892d7c"
+# ─── Feishu API 配置（复用主项目 config） ──────────────────────
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from config import Config
+
+_API_BASE = "https://open.feishu.cn/open-apis"
+_TOKEN_URL = f"{_API_BASE}/auth/v3/tenant_access_token/internal"
+_MSG_URL = f"{_API_BASE}/im/v1/messages?receive_id_type={Config.FEISHU_RECEIVE_ID_TYPE}"
+_token_cache = {"token": None, "expires_at": 0}
+
+
+def _get_token() -> Optional[str]:
+    now = time.time()
+    if _token_cache["token"] and now < _token_cache["expires_at"] - 60:
+        return _token_cache["token"]
+    try:
+        resp = requests.post(_TOKEN_URL, json={"app_id": Config.FEISHU_APP_ID, "app_secret": Config.FEISHU_APP_SECRET}, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") == 0:
+            _token_cache["token"] = data["tenant_access_token"]
+            _token_cache["expires_at"] = now + data.get("expire", 7200)
+            return _token_cache["token"]
+    except Exception as e:
+        print(f"[Feishu Stage] 获取 token 失败: {e}")
+    return None
+
+
+def _send(text: str) -> bool:
+    token = _get_token()
+    if not token:
+        return False
+    try:
+        resp = requests.post(
+            _MSG_URL,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"receive_id": Config.FEISHU_RECEIVE_ID, "msg_type": "text", "content": json.dumps({"text": text})},
+            timeout=15,
+        )
+        return resp.json().get("code") == 0
+    except Exception as e:
+        print(f"[Feishu Stage] 发送失败: {e}")
+        return False
 
 # 通知状态文件
 _NOTIF_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'stage_notif_status.json')
@@ -71,18 +114,7 @@ def send_stage_trigger_notification(
 建议买入股数：{shares}
 触发时间：{trigger_time}"""
 
-    cmd = [
-        'openclaw', 'message', 'send',
-        '--channel', 'feishu',
-        '--target', FEISHU_TARGET,
-        '--message', message
-    ]
-
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-        return result.returncode == 0
-    except Exception:
-        return False
+    return _send(message)
 
 
 def send_test_notification() -> bool:
@@ -91,17 +123,7 @@ def send_test_notification() -> bool:
 时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 阶段买入策略跟踪系统，飞书通知功能正常！"""
 
-    cmd = [
-        'openclaw', 'message', 'send',
-        '--channel', 'feishu',
-        '--target', FEISHU_TARGET,
-        '--message', message
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-        return result.returncode == 0
-    except Exception:
-        return False
+    return _send(message)
 
 
 # ── Excel 导入导出 ────────────────────────────────────────

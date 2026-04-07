@@ -8,13 +8,9 @@
 - send_test(): 发送测试通知，验证连通性
 
 【通知渠道】
-- 通过 openclaw message send --channel feishu 发送
-- 飞书机器人目标 ID: ou_268fcd21ee877df7e4d16305a4892d7c
-
-【涨跌幅提醒逻辑】
-- change_percent > 0 → 上涨，提醒文本显示「上涨 X%」
-- change_percent < 0 → 下跌，提醒文本显示「下跌 X%」
-- abs(change_percent) >= threshold → 触发通知
+- 通过飞书开放平台 API 直接调用
+- 使用 Feishu Send Message API（receive_id 模式）
+- 消息类型: text（纯文本）
 
 【去重机制】
 - 使用 data/notification_status.json 记录当日已通知股票
@@ -25,28 +21,106 @@
 - 无直接被 app.py 调用
 
 【依赖】
-- subprocess (调用 openclaw CLI)
-- json / os / datetime (文件去重)
-
-【配置】
-- FEISHU_TARGET: 飞书机器人 WebHook 或 Bot ID
+- requests（已在 requirements.txt）
+- json / os / fcntl / datetime（文件去重）
 """
 
-import subprocess
 import json
 import os
 import fcntl
+import time
+import requests
 from datetime import datetime
 from typing import Optional
 
-FEISHU_TARGET = "ou_268fcd21ee877df7e4d16305a4892d7c"
+from config import Config
+
+# _notified_today 共享对象由 monitor.py 管理（避免循环导入，此模块不维护状态）
+
+
+def _get_notified_today() -> set:
+    """
+    运行时从 monitor.py 获取共享的 _notified_today set。
+    不缓存，每次实时访问以确保拿到正确的对象引用。
+    """
+    import sys
+    try:
+        _m = sys.modules.get('services.monitor')
+        if _m is not None:
+            return _m._notified_today
+    except Exception:
+        pass
+    return set()
+
+# ─── Feishu API 配置 ─────────────────────────────────────────
+_FEISHU_APP_ID = Config.FEISHU_APP_ID
+_FEISHU_APP_SECRET = Config.FEISHU_APP_SECRET
+_FEISHU_RECEIVE_ID = Config.FEISHU_RECEIVE_ID
+_FEISHU_RECEIVE_ID_TYPE = Config.FEISHU_RECEIVE_ID_TYPE
+
+_API_BASE = "https://open.feishu.cn/open-apis"
+_TOKEN_URL = f"{_API_BASE}/auth/v3/tenant_access_token/internal"
+_MSG_URL = f"{_API_BASE}/im/v1/messages?receive_id_type={_FEISHU_RECEIVE_ID_TYPE}"
+
+# ─── Token 缓存（进程内单例，避免频繁刷新） ────────────────────
+_token_info = {"token": None, "expires_at": 0}
+
+
+def _get_tenant_token() -> Optional[str]:
+    """获取 tenant_access_token，带进程内缓存（有效期 2 小时）"""
+    now = time.time()
+    if _token_info["token"] and now < _token_info["expires_at"] - 60:
+        return _token_info["token"]
+
+    try:
+        resp = requests.post(
+            _TOKEN_URL,
+            json={"app_id": _FEISHU_APP_ID, "app_secret": _FEISHU_APP_SECRET},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") == 0:
+            _token_info["token"] = data["tenant_access_token"]
+            _token_info["expires_at"] = now + data.get("expire", 7200)
+            return _token_info["token"]
+    except Exception as e:
+        print(f"[Feishu] 获取 tenant_access_token 失败: {e}")
+    return None
+
+
+def _send_feishu_message(text: str) -> bool:
+    """
+    通过飞书开放平台 API 发送文本消息。
+    返回 True = 发送成功，False = 失败。
+    """
+    token = _get_tenant_token()
+    if not token:
+        return False
+
+    try:
+        resp = requests.post(
+            _MSG_URL,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "receive_id": _FEISHU_RECEIVE_ID,
+                "msg_type": "text",
+                "content": json.dumps({"text": text}),
+            },
+            timeout=15,
+        )
+        # code==0 表示成功
+        return resp.json().get("code") == 0
+    except Exception as e:
+        print(f"[Feishu] 发送消息异常: {e}")
+        return False
+
+
+# ─── 文件去重逻辑（保持原接口不变） ─────────────────────────────
 _NOTIF_LOCK_FILE = "data/.notif.lock"
-
-
-def _call_openclaw(cmd: list) -> bool:
-    """通过 openclaw CLI 发送消息，返回是否成功"""
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-    return result.returncode == 0
 
 
 def _notification_key(stock_code: str, notif_type: str, date: str) -> str:
@@ -84,7 +158,6 @@ def _try_mark_notified(stock_code: str, notif_type: str, date: str,
         return False
 
 
-# 保留旧接口以兼容，但内部委托给 _try_mark_notified
 def _check_notified(stock_code: str, notif_type: str, date: str,
                     notif_file: str = "data/notification_status.json") -> bool:
     """检查指定股票在指定日期指定类型是否已通知（文件锁保护）"""
@@ -106,12 +179,16 @@ def _check_notified_today(stock_code: str, notif_type: str = 'alert',
 def _set_notified_today(stock_code: str, notif_type: str = 'alert',
                         notif_file: str = "data/notification_status.json"):
     """兼容旧接口，默认用今日日期"""
+    # 同步写内存，避免本次已发送的消息在内存层未记录
+    mem_key = f"{stock_code}_{notif_type}"
+    notified_today = _get_notified_today()
+    notified_today.add(mem_key)
     return _set_notified(stock_code, notif_type, datetime.now().strftime('%Y-%m-%d'), notif_file)
 
 
 def clear_rebuy_notification(stock_code: str, date: str,
                              notif_file: str = "data/notification_status.json"):
-    """清除指定股票指定日期的 rebuy 通知记录（支持同股同日多时间点场景）"""
+    """清除指定股票指定日期的 rebuy 通知记录"""
     key = _notification_key(stock_code, 'rebuy', date)
     if not os.path.exists(notif_file):
         return
@@ -125,6 +202,8 @@ def clear_rebuy_notification(stock_code: str, date: str,
     except Exception:
         pass
 
+
+# ─── 对外接口 ─────────────────────────────────────────────────
 
 def send_alert(stock_code: str, stock_name: str, current_price: float,
                change_percent: float, opening_price: float,
@@ -145,8 +224,22 @@ def send_alert(stock_code: str, stock_name: str, current_price: float,
     返回:
         True = 发送成功，False = 今日已通知或发送失败
     """
-    if _check_notified_today(stock_code, 'alert'):
-        return False  # 今天已通知过
+    # 根据 reason 区分告警类型，使用独立 notif_type 避免相互拦截
+    notif_type = 'target' if '目标价' in reason else 'alert'
+
+    # 三重检查：
+    # 1. 内存 key 检查（当日已发过）
+    mem_key = f"{stock_code}_{notif_type}"
+    notified_today = _get_notified_today()
+    if mem_key in notified_today:
+        return False  # 内存中已存在，当日不重复发送
+
+    # 2. reset 快速消耗标志（reset 后首次发送放行，后续同周期请求拦截）
+    reset_just_happened = _check_and_consume_sent_after_reset(stock_code)
+
+    # 3. 文件 key 检查（跨进程/跨日去重）
+    if not reset_just_happened and _check_notified_today(stock_code, notif_type):
+        return False  # 文件中已存在（且非 reset 后首次），当日不重复发送
 
     direction = "上涨" if change_percent > 0 else "下跌"
     message = f"""🚨【股价提醒】
@@ -156,15 +249,8 @@ def send_alert(stock_code: str, stock_name: str, current_price: float,
 原因：{reason}
 时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
 
-    cmd = [
-        'openclaw', 'message', 'send',
-        '--channel', 'feishu',
-        '--target', FEISHU_TARGET,
-        '--message', message
-    ]
-
-    if _call_openclaw(cmd):
-        _set_notified_today(stock_code, 'alert')
+    if _send_feishu_message(message):
+        _set_notified_today(stock_code, notif_type)
         return True
     return False
 
@@ -187,14 +273,7 @@ def send_rebuy_reminder(stock_code: str, stock_name: str,
 
 ✅ 到达设定的重新买进时间，请关注！"""
 
-    cmd = [
-        'openclaw', 'message', 'send',
-        '--channel', 'feishu',
-        '--target', FEISHU_TARGET,
-        '--message', message
-    ]
-
-    return _call_openclaw(cmd)
+    return _send_feishu_message(message)
 
 
 def send_test() -> bool:
@@ -203,10 +282,66 @@ def send_test() -> bool:
 时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 股票监控系统Web版，飞书通知功能正常！"""
 
-    cmd = [
-        'openclaw', 'message', 'send',
-        '--channel', 'feishu',
-        '--target', FEISHU_TARGET,
-        '--message', message
-    ]
-    return _call_openclaw(cmd)
+    return _send_feishu_message(message)
+
+
+# ─── 通知重置机制（股票修改时自动解除每日限制） ─────────────────────
+
+# 内存缓存重置回调，由 monitor.py 注册
+_inmemory_reset_cb = None
+
+# 防止 reset 后同一 cycle 内重复发送的标志：reset 后设为 True，send 成功后重置为 False
+_sent_after_reset: dict = {}
+
+
+def register_inmemory_reset_callback(cb):
+    """注册内存缓存重置回调（由 monitor.py 调用）"""
+    global _inmemory_reset_cb
+    _inmemory_reset_cb = cb
+
+
+def reset_stock_notifications(stock_code: str,
+                             notif_file: str = "data/notification_status.json"):
+    """
+    重置指定股票的当日通知状态，解除每日只发1次的限制。
+    - 清除文件中的所有相关记录（alert / target / rebuy 所有类型，所有日期）
+    - 触发内存缓存重置回调（清除普通通知 key）
+    - 设置 _sent_after_reset[stock_code] = True，防止 reset 周期内重复发送
+    """
+    # 1. 清除文件中的记录（alert / target / rebuy 所有类型，所有日期）
+    if not os.path.exists(notif_file):
+        pass
+    else:
+        try:
+            with open(notif_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            # 清除所有以该股票代码开头的 key
+            keys_to_delete = [k for k in data if k.startswith(f"{stock_code}_")]
+            for k in keys_to_delete:
+                del data[k]
+            with open(notif_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    # 2. 触发内存缓存重置（清除普通通知 key）
+    if _inmemory_reset_cb:
+        try:
+            _inmemory_reset_cb(stock_code)
+        except Exception:
+            pass
+
+    # 3. 标记该股票刚发生 reset，后续 send_alert 检查此标记，防止快速重复发送
+    _sent_after_reset[stock_code] = True
+
+
+def _check_and_consume_sent_after_reset(stock_code: str) -> bool:
+    """
+    检查并原子消耗 reset 标志。
+    返回 True = reset 刚发生且尚未发送，本次 send_alert 可以执行。
+    返回 False = 已被消耗（本次 reset 周期内已有 send_alert 执行过）。
+    """
+    flag = _sent_after_reset.get(stock_code, False)
+    if flag:
+        _sent_after_reset[stock_code] = False  # 消耗掉，只允许一次
+    return flag
