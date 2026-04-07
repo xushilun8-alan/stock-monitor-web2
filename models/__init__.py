@@ -180,11 +180,13 @@ def update_stock(code: str, **kwargs) -> bool:
     conn.commit()
     ok = c.rowcount > 0
     conn.close()
-    # 修改后自动重置该股票的当日通知限制，允许重新触发
+    # 仅当告警相关字段变更时，才重置该股票的当日通知限制，允许重新触发
+    # 其他字段（如 name、rebuy_time 等）变更不触发，避免误放行重复预警
     if ok:
-        # 延迟导入避免循环：models -> feishu_notifier -> monitor -> models
-        from services.feishu_notifier import reset_stock_notifications as _reset_stock_notif
-        _reset_stock_notif(code)
+        _alert_fields = {'threshold_percent', 'target_price', 'target_price_direction'}
+        if set(updates.keys()) & _alert_fields:
+            from services.feishu_notifier import reset_stock_notifications as _reset_stock_notif
+            _reset_stock_notif(code)
     return ok
 
 
