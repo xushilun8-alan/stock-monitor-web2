@@ -13,8 +13,9 @@
 - 消息类型: text（纯文本）
 
 【去重机制】
-- 使用 data/notification_status.json 记录当日已通知股票
-- 每个交易日自动重置缓存
+- 内存+文件双重检查：内存层（进程内 set） + 文件层（跨进程/跨日）
+- 股票修改保存时触发 reset，清除该股票所有已通知状态
+- reset 后首次触发放行（内存+文件均已清除），后续同日内正常拦截
 
 【调用关系】
 - 被 services/monitor.py (后台监控循环) 调用
@@ -227,19 +228,16 @@ def send_alert(stock_code: str, stock_name: str, current_price: float,
     # 根据 reason 区分告警类型，使用独立 notif_type 避免相互拦截
     notif_type = 'target' if '目标价' in reason else 'alert'
 
-    # 三重检查：
-    # 1. 内存 key 检查（当日已发过）
+    # 双重检查：
+    # 1. 内存 key 检查（当日已发过则跳过）
     mem_key = f"{stock_code}_{notif_type}"
     notified_today = _get_notified_today()
     if mem_key in notified_today:
         return False  # 内存中已存在，当日不重复发送
 
-    # 2. reset 快速消耗标志（reset 后首次发送放行，后续同周期请求拦截）
-    reset_just_happened = _check_and_consume_sent_after_reset(stock_code)
-
-    # 3. 文件 key 检查（跨进程/跨日去重）
-    if not reset_just_happened and _check_notified_today(stock_code, notif_type):
-        return False  # 文件中已存在（且非 reset 后首次），当日不重复发送
+    # 2. 文件 key 检查（跨进程/跨日去重）
+    if _check_notified_today(stock_code, notif_type):
+        return False  # 文件中已存在，当日不重复发送
 
     direction = "上涨" if change_percent > 0 else "下跌"
     message = f"""🚨【股价提醒】
@@ -290,9 +288,6 @@ def send_test() -> bool:
 # 内存缓存重置回调，由 monitor.py 注册
 _inmemory_reset_cb = None
 
-# 防止 reset 后同一 cycle 内重复发送的标志：reset 后设为 True，send 成功后重置为 False
-_sent_after_reset: dict = {}
-
 
 def register_inmemory_reset_callback(cb):
     """注册内存缓存重置回调（由 monitor.py 调用）"""
@@ -306,7 +301,7 @@ def reset_stock_notifications(stock_code: str,
     重置指定股票的当日通知状态，解除每日只发1次的限制。
     - 清除文件中的所有相关记录（alert / target / rebuy 所有类型，所有日期）
     - 触发内存缓存重置回调（清除普通通知 key）
-    - 设置 _sent_after_reset[stock_code] = True，防止 reset 周期内重复发送
+    重置后，send_alert 依赖内存+文件双重检查放行，不依赖单次快速通道。
     """
     # 1. 清除文件中的记录（alert / target / rebuy 所有类型，所有日期）
     if not os.path.exists(notif_file):
@@ -330,18 +325,3 @@ def reset_stock_notifications(stock_code: str,
             _inmemory_reset_cb(stock_code)
         except Exception:
             pass
-
-    # 3. 标记该股票刚发生 reset，后续 send_alert 检查此标记，防止快速重复发送
-    _sent_after_reset[stock_code] = True
-
-
-def _check_and_consume_sent_after_reset(stock_code: str) -> bool:
-    """
-    检查并原子消耗 reset 标志。
-    返回 True = reset 刚发生且尚未发送，本次 send_alert 可以执行。
-    返回 False = 已被消耗（本次 reset 周期内已有 send_alert 执行过）。
-    """
-    flag = _sent_after_reset.get(stock_code, False)
-    if flag:
-        _sent_after_reset[stock_code] = False  # 消耗掉，只允许一次
-    return flag
