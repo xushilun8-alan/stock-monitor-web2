@@ -75,16 +75,21 @@ stock-monitor-web2/
 └── data/                       # 数据持久化
     ├── stocks.db               # SQLite 数据库
     └── notification_status.json # 飞书通知去重状态
+
+├── tests/                      # 单元/集成测试
+│   ├── conftest.py            # pytest fixture（db reset）
+│   ├── test_threshold.py      # 涨跌幅阈值校验/解析/告警逻辑（18 项用例）
+│   └── test_target_price_auto_infer.py # 目标价自动推断测试
 ```
 
 ## 模块职责
 
 | 模块 | 职责 | 关键接口 |
 |------|------|---------|
-| **models** | SQLite 封装，股票 CRUD，软删除/恢复 | `get_all_stocks`, `add_stock`, `update_stock`, `delete_stock`, `restore_stock` |
+| **models** | SQLite 封装，股票 CRUD，软删除/恢复，阈值解析/校验 | `get_all_stocks`, `add_stock`, `update_stock`, `delete_stock`, `restore_stock`, `parse_threshold(threshold_str)`, `validate_threshold(threshold_str)` |
 | **services/stock_data** | 腾讯/新浪财经/Yahoo 获取实时股价 | `get_stock_price(code)` → `{current_price, change_percent, name, ...}` |
 | **services/feishu_notifier** | 飞书机器人通知发送（告警/重买提醒/测试） | `send_alert(...)`, `send_rebuy_reminder(...)`, `send_test()` |
-| **services/monitor** | 后台定时监控循环（daemon 线程） | `start_monitor()`, `stop_monitor()`, `check_and_notify(...)` |
+| **services/monitor** | 后台定时监控循环（daemon 线程），双条件独立告警判断 | `start_monitor()`, `stop_monitor()`, `check_and_notify(code, name, rise_threshold, fall_threshold, ...)` |
 | **routes/stock_api** | RESTful API（Blueprint） | 见下方接口清单 |
 | **vue-project** | Vue 3 SPA 前端（替代旧模板） | Pinia + Composables + 组件化 |
 | **app** | 页面渲染路由 + 应用启动 | `app.py` 启动 Flask，Vue 构建后集成 |
@@ -117,7 +122,7 @@ stock-monitor-web2/
 |------|------|------|
 | `code` | TEXT PK | 股票代码，如 601857 |
 | `name` | TEXT | 股票名称 |
-| `threshold_percent` | REAL | 触发通知涨跌幅阈值（正数=涨幅，负数=跌幅） |
+| `threshold_percent` | TEXT | 涨跌幅阈值存储字符串，格式：`""`=不监控，`"5"`=涨幅≥5%告警，`"-3"`=跌幅≤-3%告警，`"5 -3"`=双值同时监控（空格分隔，顺序不限）；读取时由 `parse_threshold()` 解析为 `rise_threshold`(上涨) / `fall_threshold`(下跌) |
 | `target_price` | REAL | 目标价格（NULL=不启用） |
 | `target_price_direction` | INTEGER | 1=止盈监控（涨破目标价触发），-1=买入监控（跌到目标价触发）；新增/修改时若前端未传则后端自动推断 |
 | `monitor_enabled` | INTEGER | 0=暂停监控，1=启用监控 |
