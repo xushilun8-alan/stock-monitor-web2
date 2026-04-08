@@ -39,11 +39,17 @@
       <div class="form-row">
         <label>监控涨跌幅阈值 (%)</label>
         <input
-          type="number"
-          v-model.number="form.threshold_percent"
-          step="0.1"
+          type="text"
+          v-model="form.threshold_percent"
+          placeholder="例：5（涨幅≥5%告警）或 5 -3（涨5%/跌3%双监控）或留空（不监控）"
         />
-        <div class="hint">正数监控涨幅，负数监控跌幅（例：5 = 涨5%触发，-5 = 跌5%触发）</div>
+        <div class="hint">
+          支持格式：<br/>
+          · 空值 → 不监控涨跌幅<br/>
+          · 单值（正数） → 仅涨幅达标触发，如 5<br/>
+          · 单值（负数） → 仅跌幅达标触发，如 -3<br/>
+          · 双值（空格分隔，一正一负） → 同时监控涨跌，如 5 -3
+        </div>
       </div>
 
       <!-- 目标价 -->
@@ -118,7 +124,7 @@ const { toast } = useToast()
 const defaultForm = () => ({
   code: '',
   name: '',
-  threshold_percent: 2.0,
+  threshold_percent: '2.0',
   target_price: null,
   target_price_direction: 1,
   rebuy_date: '',

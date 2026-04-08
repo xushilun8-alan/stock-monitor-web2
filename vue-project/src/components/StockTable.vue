@@ -43,8 +43,13 @@
             </div>
           </td>
           <td>
-            <span class="threshold">
-              {{ s.threshold_percent > 0 ? '涨' : '跌' }}{{ Math.abs(s.threshold_percent) }}%
+            <span class="threshold" v-if="!s.rise_threshold && !s.fall_threshold" style="color:var(--muted)">
+              无
+            </span>
+            <span class="threshold" v-else>
+              <span v-if="s.rise_threshold" style="color:var(--up)">涨{{ s.rise_threshold }}%</span>
+              <br v-if="s.rise_threshold && s.fall_threshold" />
+              <span v-if="s.fall_threshold" style="color:var(--down)">跌{{ Math.abs(s.fall_threshold) }}%</span>
             </span>
           </td>
           <td>

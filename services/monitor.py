@@ -61,18 +61,24 @@ def _reset_daily_cache():
         _last_notif_date = today
 
 
-def check_and_notify(code: str, name: str, threshold_percent: float,
-                     target_price: float, target_price_direction: int = 1,
+def check_and_notify(code: str, name: str,
+                     rise_threshold: float = None, fall_threshold: float = None,
+                     target_price: float = None, target_price_direction: int = 1,
                      price_data: dict = None):
     """
-    检查是否触发告警，发送飞书通知
+    检查是否触发涨跌幅/目标价告警，发送飞书通知。
+
+    2026-04-08 改：为支持双值阈值，参数由 threshold_percent 改为 rise_threshold/fall_threshold，
+    由调用方（MonitorLoop._loop）通过 parse_threshold() 解析后传入。
 
     触发条件（各自独立判断，可同时触发）:
-    1. abs(change_percent) >= threshold_percent → 涨跌告警
-    2. target_price_direction == 1 and current_price >= target_price → 止盈监控
-    3. target_price_direction == -1 and current_price <= target_price → 买入监控
+    1. rise_threshold 非 None 且 change_percent >= rise_threshold → 上涨告警
+    2. fall_threshold 非 None 且 change_percent <= fall_threshold → 下跌告警
+    3. target_price_direction == 1 and current_price >= target_price → 止盈监控
+    4. target_price_direction == -1 and current_price <= target_price → 买入监控
 
-    告警类型使用独立key，避免相互拦截。
+    告警类型使用独立 notif_key（_threshold_rise / _threshold_fall / _target），
+    相互独立，互不拦截。
     """
     global _notified_today
 
@@ -84,37 +90,25 @@ def check_and_notify(code: str, name: str, threshold_percent: float,
     change_percent = price_data.get('change_percent', 0)
     current_price = price_data.get('current_price', 0)
 
-    # 分别判断涨跌告警和目标价告警，独立发送
-    # 涨跌告警 (threshold)
-    threshold_triggered = False
-    threshold_reason = ""
-    if threshold_percent > 0:
-        if change_percent >= threshold_percent:
-            threshold_triggered = True
-            threshold_reason = f"涨幅 {change_percent:+.2f}% 达阈值 {threshold_percent}%"
-    elif threshold_percent < 0:
-        if change_percent <= threshold_percent:
-            threshold_triggered = True
-            threshold_reason = f"跌幅 {change_percent:+.2f}% 达阈值 {abs(threshold_percent)}%"
+    # ── 上涨告警（仅当配置了上涨阈值且涨幅达标）─────────────────
+    rise_triggered = False
+    rise_reason = ""
+    if rise_threshold is not None and rise_threshold > 0:
+        if change_percent >= rise_threshold:
+            rise_triggered = True
+            rise_reason = f"涨幅 {change_percent:+.2f}% 达上涨阈值 {rise_threshold}%"
 
-    # 目标价告警 (target_price)，使用独立key和显式方向
-    target_triggered = False
-    target_reason = ""
-    if target_price and target_price > 0:
-        if target_price_direction == 1:
-            # 止盈监控：涨破触发
-            if current_price >= target_price:
-                target_triggered = True
-                target_reason = f"股价 {current_price:.2f} 达到/突破目标价 {target_price:.2f}（止盈监控）"
-        elif target_price_direction == -1:
-            # 买入监控：跌到触发
-            if current_price <= target_price:
-                target_triggered = True
-                target_reason = f"股价 {current_price:.2f} 跌至目标价 {target_price:.2f}（买入监控）"
+    # ── 下跌告警（仅当配置了下跌阈值且跌幅达标）─────────────────
+    fall_triggered = False
+    fall_reason = ""
+    if fall_threshold is not None and fall_threshold < 0:
+        if change_percent <= fall_threshold:
+            fall_triggered = True
+            fall_reason = f"跌幅 {change_percent:+.2f}% 达下跌阈值 {abs(fall_threshold)}%"
 
-    # 发送涨跌告警
-    if threshold_triggered:
-        notif_key = f"{code}_threshold"
+    # 发送上涨告警
+    if rise_triggered:
+        notif_key = f"{code}_threshold_rise"
         if notif_key not in _notified_today:
             ok = send_alert(
                 stock_code=code,
@@ -124,12 +118,41 @@ def check_and_notify(code: str, name: str, threshold_percent: float,
                 opening_price=price_data.get('opening_price', 0),
                 high=price_data.get('high', 0),
                 low=price_data.get('low', 0),
-                reason=threshold_reason,
+                reason=rise_reason,
             )
             if ok:
                 _notified_today.add(notif_key)
 
-    # 发送目标价告警（独立于涨跌告警）
+    # 发送下跌告警（独立于上涨告警）
+    if fall_triggered:
+        notif_key = f"{code}_threshold_fall"
+        if notif_key not in _notified_today:
+            ok = send_alert(
+                stock_code=code,
+                stock_name=name or code,
+                current_price=current_price,
+                change_percent=change_percent,
+                opening_price=price_data.get('opening_price', 0),
+                high=price_data.get('high', 0),
+                low=price_data.get('low', 0),
+                reason=fall_reason,
+            )
+            if ok:
+                _notified_today.add(notif_key)
+
+    # ── 目标价告警（独立于涨跌幅告警）────────────────────────
+    target_triggered = False
+    target_reason = ""
+    if target_price and target_price > 0:
+        if target_price_direction == 1:
+            if current_price >= target_price:
+                target_triggered = True
+                target_reason = f"股价 {current_price:.2f} 达到/突破目标价 {target_price:.2f}（止盈监控）"
+        elif target_price_direction == -1:
+            if current_price <= target_price:
+                target_triggered = True
+                target_reason = f"股价 {current_price:.2f} 跌至目标价 {target_price:.2f}（买入监控）"
+
     if target_triggered:
         notif_key = f"{code}_target"
         if notif_key not in _notified_today:
@@ -226,7 +249,7 @@ class MonitorLoop:
     def _loop(self):
         while self._running:
             interval = get_interval()
-            stocks = get_monitor_stocks()
+            stocks = get_monitor_stocks()  # 返回数据已含 rise_threshold / fall_threshold
             if stocks:
                 for stock in stocks:
                     price_data = get_stock_price(stock['code'])
@@ -234,7 +257,8 @@ class MonitorLoop:
                         check_and_notify(
                             code=stock['code'],
                             name=stock['name'],
-                            threshold_percent=stock['threshold_percent'],
+                            rise_threshold=stock.get('rise_threshold'),
+                            fall_threshold=stock.get('fall_threshold'),
                             target_price=stock.get('target_price'),
                             target_price_direction=stock.get('target_price_direction', 1),
                             price_data=price_data,

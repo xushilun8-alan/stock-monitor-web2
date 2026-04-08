@@ -60,7 +60,7 @@ from models import (
     get_all_stocks, get_stock, add_stock, update_stock,
     delete_stock, get_interval, set_interval,
     restore_stock, permanent_delete_stock, is_code_exists,
-    get_deleted_stocks,
+    get_deleted_stocks, validate_threshold,
 )
 from services.stock_data import get_stock_price
 from services.feishu_notifier import send_test, clear_rebuy_notification, reset_stock_notifications
@@ -151,10 +151,14 @@ def api_add_stock():
     else:
         target_price_direction = 1  # 无目标价时默认
 
+    # 涨跌幅阈值校验（2026-04-08：支持空值/单值/双值，非法自动清空）
+    threshold_raw = data.get('threshold_percent', '2.0')
+    threshold_validated = validate_threshold(threshold_raw) or '2.0'
+
     ok = add_stock(
         code=clean,
         name=name,
-        threshold_percent=float(data.get('threshold_percent', 2.0)),
+        threshold_percent=threshold_validated,
         target_price=target_price,
         target_price_direction=target_price_direction,
     )
@@ -240,7 +244,9 @@ def api_update_stock(code: str):
         add_stock(
             code=clean,
             name=data.get('name', old.get('name', '')),
-            threshold_percent=float(data.get('threshold_percent', old.get('threshold_percent', 2.0))),
+            threshold_percent=validate_threshold(
+                data.get('threshold_percent', old.get('threshold_percent', '2.0'))
+            ) or old.get('threshold_percent', '2.0'),
             target_price=new_target_price,
             target_price_direction=new_direction,
             monitor_enabled=int(data.get('monitor_enabled', old.get('monitor_enabled', 1))),
@@ -267,6 +273,11 @@ def api_update_stock(code: str):
     alert_fields = {'threshold_percent', 'target_price', 'target_price_direction'}
     if alert_fields & set(data.keys()):
         reset_stock_notifications(old_code)
+
+    # 2026-04-08：涨跌幅阈值校验（非法格式自动清空）
+    if 'threshold_percent' in data:
+        validated = validate_threshold(data['threshold_percent'])
+        data = {**data, 'threshold_percent': validated if validated != '' else ''}
 
     # 若 target_price 变更且用户未指定方向，自动判断
     if 'target_price' in data and data.get('target_price') is not None and 'target_price_direction' not in data:

@@ -36,6 +36,127 @@ from typing import Optional, List, Dict, Any
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'stocks.db')
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
+# ─────────────────────────────────────────────────────────────
+# 涨跌幅阈值解析与校验（供外部调用）
+# ─────────────────────────────────────────────────────────────
+
+def parse_threshold(threshold_str) -> tuple:
+    """
+    将数据库存储的 threshold_percent 字符串解析为 (上涨阈值, 下跌阈值)。
+
+    存储格式（均为字符串）：
+      ""          → (None, None)       不监控任何方向
+      "5"         → (5.0, None)         仅监控涨幅
+      "-3"        → (None, -3.0)        仅监控跌幅
+      "5 -3"      → (5.0, -3.0)         同时监控涨跌幅
+
+    Returns:
+        tuple[float|None, float|None]: (上涨阈值, 下跌阈值)
+    """
+    if threshold_str is None:
+        return (None, None)
+
+    s = str(threshold_str).strip()
+    if not s:
+        return (None, None)
+
+    try:
+        # 单值情况（不带空格）
+        if ' ' not in s:
+            val = float(s)
+            if val > 0:
+                return (val, None)
+            elif val < 0:
+                return (None, val)
+            else:
+                return (None, None)  # 0 不监控任何方向
+
+        # 双值情况（空格分隔，最多2个）
+        parts = s.split()
+        if len(parts) != 2:
+            return (None, None)
+
+        vals = [float(p) for p in parts]
+        rise, fall = None, None
+        for v in vals:
+            if v > 0:
+                rise = v
+            elif v < 0:
+                fall = v
+        return (rise, fall)
+    except (ValueError, TypeError):
+        return (None, None)
+
+
+def _fmt(val: float) -> str:
+    """将数值规范化为字符串，整数不显示小数位（如 5.0 → '5'，5.5 → '5.5'）"""
+    s = f"{val:.10g}"  # 采用最简方式，去除尾部多余的0
+    return s
+
+
+def validate_threshold(threshold_str) -> str:
+    """
+    校验并规范化用户输入的涨跌幅阈值字符串。
+
+    合法的输入格式：
+      ""（空）       → ""               不监控任何方向
+      "5"            → "5"              单值正数（涨幅监控）
+      "-3"           → "-3"             单值负数（跌幅监控）
+      "5 -3"        → "5 -3"           双值一正一负（顺序不限）
+      "-3 5"        → "5 -3"           双值自动规范排序（正数在前）
+      " -3 5  "     → "5 -3"           去除首尾空白后规范化
+
+    非法格式（返回空字符串，按不监控处理）：
+      "2 3"  → 同正 → ""（同号双值不允许）
+      "-4 -2" → 同负 → ""
+      "5 a"  → 含非数字 → ""
+      "3 -2 4" → 超过2个数值 → ""
+      格式混乱 → ""
+
+    Args:
+        threshold_str: 用户输入的原始字符串
+
+    Returns:
+        str: 合规格式字符串（可直接写入数据库），非法时返回 ""
+    """
+    if threshold_str is None:
+        return ""
+
+    s = str(threshold_str).strip()
+    if not s:
+        return ""
+
+    try:
+        # 单值情况
+        if ' ' not in s:
+            val = float(s)
+            if val == 0:
+                return ""
+            return _fmt(val)
+
+        # 双值情况
+        parts = s.split()
+        if len(parts) != 2:
+            return ""
+
+        v1, v2 = float(parts[0]), float(parts[1])
+
+        # 必须一正一负（0 分别与正/负组合时，0本身不产生阈值但另一值有效）
+        # 判断：有一个严格正值 AND 有一个严格负值
+        has_positive = v1 > 0 or v2 > 0
+        has_negative = v1 < 0 or v2 < 0
+        if not (has_positive and has_negative):
+            return ""
+
+        # 规范排序：正数在前，负数在后
+        pos_val = v1 if v1 > 0 else v2
+        neg_val = v1 if v1 < 0 else v2
+        return f"{_fmt(pos_val)} {_fmt(neg_val)}"
+
+    except (ValueError, TypeError):
+        return ""
+
+
 # 追踪当前连接，换路径前先关闭旧连接避免 SQLite file is locked
 _conn = None
 
@@ -72,7 +193,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS stocks (
             code TEXT PRIMARY KEY,
             name TEXT NOT NULL DEFAULT '',
-            threshold_percent REAL DEFAULT 2.0,
+            threshold_percent TEXT DEFAULT '2.0',
             target_price REAL,
             target_price_direction INTEGER DEFAULT 1,
             monitor_enabled INTEGER DEFAULT 1,
@@ -99,8 +220,43 @@ def init_db():
             c.execute(f"ALTER TABLE stocks ADD COLUMN {col} {typ}")
         except Exception:
             pass
+    # 2026-04-08 迁移：threshold_percent 从 REAL → TEXT（支持双值存储）
+    # SQLite 不支持 DROP COLUMN，用「追加新列+一次性转换」方式迁移
+    try:
+        # 检测旧 REAL 列是否仍存在（从未迁移过）
+        col_info = c.execute("PRAGMA table_info(stocks)").fetchall()
+        col_names = [r['name'] for r in col_info]
+        has_real_old = 'threshold_percent' in col_names and \
+                        any(r['type'] == 'REAL' for r in col_info if r['name'] == 'threshold_percent')
+        if has_real_old:
+            # 添加 TEXT 新列（若已存在则忽略）
+            try:
+                c.execute("ALTER TABLE stocks ADD COLUMN threshold_percent TEXT")
+            except Exception:
+                pass  # 列已存在
+            # 把旧 REAL 值全部转为规范字符串存入新列
+            rows = c.execute("SELECT code, threshold_percent FROM stocks").fetchall()
+            for row in rows:
+                old_val = row['threshold_percent']
+                if old_val is not None:
+                    # 转为字符串并规范化（正数直接，负数带负号）
+                    str_val = str(float(old_val))
+                    c.execute(
+                        "UPDATE stocks SET threshold_percent = ? WHERE code = ?",
+                        (str_val, row['code'])
+                    )
+    except Exception:
+        pass
     conn.commit()
     conn.close()
+
+
+def _attach_threshold(stock: dict) -> dict:
+    """为股票记录附加 rise_threshold / fall_threshold 字段（供内部读取接口复用）"""
+    rise, fall = parse_threshold(stock.get('threshold_percent'))
+    stock['rise_threshold'] = rise
+    stock['fall_threshold'] = fall
+    return stock
 
 
 def get_all_stocks(include_deleted: bool = False) -> List[Dict[str, Any]]:
@@ -120,7 +276,7 @@ def get_all_stocks(include_deleted: bool = False) -> List[Dict[str, Any]]:
             'SELECT * FROM stocks WHERE is_deleted = 0 ORDER BY code'
         ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [_attach_threshold(dict(r)) for r in rows]
 
 
 def get_stock(code: str) -> Optional[Dict[str, Any]]:
@@ -129,19 +285,22 @@ def get_stock(code: str) -> Optional[Dict[str, Any]]:
     c = conn.cursor()
     row = c.execute('SELECT * FROM stocks WHERE code = ?', (code,)).fetchone()
     conn.close()
-    return dict(row) if row else None
+    return _attach_threshold(dict(row)) if row else None
 
 
-def add_stock(code: str, name: str = '', threshold_percent: float = 2.0,
+def add_stock(code: str, name: str = '', threshold_percent='2.0',
               target_price: float = None, target_price_direction: int = 1,
               monitor_enabled: int = 1,
               rebuy_enabled: int = 0, rebuy_date: str = None,
               rebuy_time: str = '09:00:00') -> bool:
     """新增股票，返回 True 成功，False 失败（如代码已存在）
-    
+
     Args:
+        threshold_percent: 合规的阈值字符串（如 "2.0"、"5 -3"），保存前需经 validate_threshold() 校验
         target_price_direction: 1=止盈监控(涨破触发), -1=买入监控(跌到触发)
     """
+    # 确保写入字符串（支持双值）
+    th_str = str(threshold_percent) if threshold_percent is not None else '2.0'
     try:
         conn = _get_db()
         c = conn.cursor()
@@ -150,7 +309,7 @@ def add_stock(code: str, name: str = '', threshold_percent: float = 2.0,
                                 target_price_direction, monitor_enabled, rebuy_enabled,
                                 rebuy_date, rebuy_time)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (code.upper(), name, threshold_percent, target_price,
+        ''', (code.upper(), name, th_str, target_price,
               target_price_direction, monitor_enabled, rebuy_enabled,
               rebuy_date, rebuy_time))
         conn.commit()
@@ -267,7 +426,7 @@ def get_monitor_stocks() -> List[Dict[str, Any]]:
         'SELECT * FROM stocks WHERE monitor_enabled = 1 AND is_deleted = 0 ORDER BY code'
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [_attach_threshold(dict(r)) for r in rows]
 
 
 def get_interval() -> int:
