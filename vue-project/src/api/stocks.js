@@ -133,3 +133,12 @@ export async function testNotify() {
   const res = await fetch('/api/test-notify', { method: 'POST' })
   return res.json()
 }
+
+/**
+ * 全局重置当日所有股价告警通知
+ * @returns {Promise<{ok: boolean, message?: string, error?: string}>}
+ */
+export async function resetAllAlerts() {
+  const res = await fetch('/api/stocks/reset-all-alerts', { method: 'POST' })
+  return res.json()
+}

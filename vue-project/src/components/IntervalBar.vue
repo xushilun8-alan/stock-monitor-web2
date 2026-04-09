@@ -13,6 +13,9 @@
     <span class="interval-msg" :style="{ display: saved ? 'inline' : 'none' }">
       ✓ 已保存
     </span>
+    <button class="btn btn-warning btn-sm" style="margin-left: 8px" @click="handleResetAlerts">
+      重置告警
+    </button>
   </div>
 </template>
 
@@ -20,6 +23,7 @@
 import { ref } from 'vue'
 import { useStockStore } from '@/stores/stockStore.js'
 import { useToast } from '@/composables/useToast.js'
+import { resetAllAlerts } from '@/api/stocks.js'
 
 const props = defineProps({
   interval: { type: Number, default: 60 }
@@ -53,6 +57,15 @@ async function handleSave() {
     toast('监控频率已更新', 'ok')
   } else {
     toast(result.error || '保存失败', 'err')
+  }
+}
+
+async function handleResetAlerts() {
+  const result = await resetAllAlerts()
+  if (result.ok) {
+    toast('所有股价告警已重置', 'ok')
+  } else {
+    toast(result.error || '重置失败', 'err')
   }
 }
 </script>
