@@ -207,15 +207,32 @@ def clear_rebuy_notification(stock_code: str, date: str,
 def clear_all_notifications(notif_file: str = "data/notification_status.json"):
     """
     清空所有股价告警通知的持久化记录。
-    直接删除通知状态文件（alert/target/rebuy 全部清空），
+    双重清空：内存集合（全局 _notified_today）+ 文件持久化。
     重置后下一轮监控满足条件即重新触发。
     无参数、无返回值。
     """
     import logging
     logger = logging.getLogger(__name__)
     try:
+        # 1. 清空全局 _notified_today 中的所有告警 key（alert/target/rebuy）
+        import sys
+        _m = sys.modules.get('services.monitor')
+        if _m is not None:
+            notified = getattr(_m, '_notified_today', None)
+            if notified:
+                # 仅清除告警相关 key，保留其他类型
+                keys_to_clear = [k for k in notified
+                               if '_alert_' in k or '_target_' in k or '_rebuy_' in k]
+                for k in keys_to_clear:
+                    notified.discard(k)
+                logger.info(f"[Feishu] 已清空内存集合中的 {len(keys_to_clear)} 条告警记录")
+    except Exception as e:
+        logger.error(f"[Feishu] 清空内存通知集合失败: {e}")
+
+    # 2. 删除文件持久化记录
+    try:
         if not os.path.exists(notif_file):
-            logger.info("[Feishu] 告警通知文件不存在，无需清空")
+            logger.info("[Feishu] 告警通知文件不存在，无需删除")
             return
         os.remove(notif_file)
         logger.info("[Feishu] 告警通知文件已删除")

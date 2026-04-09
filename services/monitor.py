@@ -288,16 +288,14 @@ class MonitorLoop:
         import logging
         logger = logging.getLogger(__name__)
         try:
-            # 1. 清空内存告警去重集合（清除含 _alert_ 或 _target_ 的 key）
+            # 1. 完全清空全局内存告警去重集合
             global _notified_today
-            alert_keys = [k for k in _notified_today
-                         if '_alert_' in k or '_target_' in k]
-            for k in alert_keys:
-                _notified_today.discard(k)
-            # 2. 清空文件持久化记录
+            count = len(_notified_today)
+            _notified_today.clear()
+            # 2. 清空文件持久化记录（feishu_notifier 内部也会清内存）
             from services.feishu_notifier import clear_all_notifications
             clear_all_notifications()
-            logger.info(f"[Monitor] 全局重置股价告警完成，清除 {len(alert_keys)} 条内存记录")
+            logger.info(f"[Monitor] 全局重置股价告警完成，清除 {count} 条内存记录")
         except Exception as e:
             logger.error(f"[Monitor] 全局重置股价告警失败: {e}")
 
@@ -323,7 +321,7 @@ def get_monitor_instance():
 
 
 def start_monitor():
-    _monitor.start()
+    get_monitor_instance().start()
 
 
 def stop_monitor():
