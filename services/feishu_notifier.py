@@ -219,7 +219,10 @@ def clear_all_notifications(notif_file: str = "data/notification_status.json"):
         with open(notif_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
         # 仅清除股价告警类型（alert / target），保留 rebuy
-        keys_to_delete = [k for k in data if k.endswith(('_alert', '_target'))]
+        # 注意：文件 key 格式为 {code}_{type}_{date}，如 000831_alert_2026-04-09
+        # 用 '_alert_' / '_target_' 子串匹配（不能仅用 endswith，因为 key 以日期结尾）
+        keys_to_delete = [k for k in data
+                         if '_alert_' in k or '_target_' in k]
         for k in keys_to_delete:
             del data[k]
         with open(notif_file, 'w', encoding='utf-8') as f:
@@ -335,7 +338,7 @@ def reset_stock_notifications(stock_code: str,
         try:
             with open(notif_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            # 清除所有以该股票代码开头的 key
+            # 清除所有以该股票代码开头的 key（alert/target/rebuy 全部清除）
             keys_to_delete = [k for k in data if k.startswith(f"{stock_code}_")]
             for k in keys_to_delete:
                 del data[k]
