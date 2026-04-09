@@ -389,3 +389,19 @@ def api_frontend_error():
     context = data.get('context', {})
     log_frontend_error(operation, error, context)
     return jsonify({'ok': True})
+
+
+@stock_bp.route('/stocks/reset-all-alerts', methods=['POST'])
+def api_reset_all_alerts():
+    """
+    全局重置当日所有股票的股价告警通知记录。
+    调用后满足告警条件的股票可立即重新发送飞书通知。
+    """
+    try:
+        from services.monitor import _monitor
+        _monitor.reset_all_alerts()
+        return jsonify({'ok': True, 'message': '所有股价告警已重置'})
+    except Exception as e:
+        import logging
+        logging.error(f"[API] 重置所有告警失败: {e}")
+        return jsonify({'ok': False, 'error': '重置失败'}), 500

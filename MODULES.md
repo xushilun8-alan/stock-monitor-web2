@@ -113,6 +113,7 @@ stock-monitor-web2/
 | GET | `/api/stock-name/<code>` | 根据代码获取股票名称 |
 | POST | `/api/test-notify` | 发送飞书测试通知 |
 | POST | `/api/frontend-error` | 前端JS错误上报并记录 |
+| POST | `/api/stocks/reset-all-alerts` | 全局重置当日所有股价告警通知（内存+文件双重清空） |
 
 ## 数据库表结构
 

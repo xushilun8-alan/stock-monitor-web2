@@ -279,6 +279,27 @@ class MonitorLoop:
         if self._thread:
             self._thread.join(timeout=5)
 
+    def reset_all_alerts(self):
+        """
+        全局重置：清空所有股票的当日股价告警通知记录（内存+文件）。
+        不影响回购提醒、监控主循环、股价查询等原有功能。
+        无参数、无返回值。
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        try:
+            # 1. 清空内存告警去重集合（仅清除 alert/target 类型 key）
+            global _notified_today
+            alert_keys = [k for k in _notified_today if k.endswith(('_alert', '_target'))]
+            for k in alert_keys:
+                _notified_today.discard(k)
+            # 2. 清空文件持久化记录
+            from services.feishu_notifier import clear_all_notifications
+            clear_all_notifications()
+            logger.info(f"[Monitor] 全局重置股价告警完成，清除 {len(alert_keys)} 条内存记录")
+        except Exception as e:
+            logger.error(f"[Monitor] 全局重置股价告警失败: {e}")
+
 
 def _reset_inmemory_cache(stock_code: str):
     """重置指定股票在内存缓存中的通知记录（供 feishu_notifier 回调使用）"""

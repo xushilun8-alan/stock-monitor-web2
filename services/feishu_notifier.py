@@ -204,6 +204,31 @@ def clear_rebuy_notification(stock_code: str, date: str,
         pass
 
 
+def clear_all_notifications(notif_file: str = "data/notification_status.json"):
+    """
+    清空所有股价告警通知的持久化记录（alert/target 类型）。
+    不影响回购提醒（rebuy）记录。
+    无参数、无返回值。
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        if not os.path.exists(notif_file):
+            logger.info("[Feishu] 告警通知文件不存在，无需清空")
+            return
+        with open(notif_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        # 仅清除股价告警类型（alert / target），保留 rebuy
+        keys_to_delete = [k for k in data if k.endswith(('_alert', '_target'))]
+        for k in keys_to_delete:
+            del data[k]
+        with open(notif_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info(f"[Feishu] 已清空 {len(keys_to_delete)} 条股价告警通知记录")
+    except Exception as e:
+        logger.error(f"[Feishu] 清空告警通知记录失败: {e}")
+
+
 # ─── 对外接口 ─────────────────────────────────────────────────
 
 def send_alert(stock_code: str, stock_name: str, current_price: float,
