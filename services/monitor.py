@@ -288,9 +288,10 @@ class MonitorLoop:
         import logging
         logger = logging.getLogger(__name__)
         try:
-            # 1. 清空内存告警去重集合（仅清除 alert/target 类型 key）
+            # 1. 清空内存告警去重集合（清除含 _alert_ 或 _target_ 的 key）
             global _notified_today
-            alert_keys = [k for k in _notified_today if k.endswith(('_alert', '_target'))]
+            alert_keys = [k for k in _notified_today
+                         if '_alert_' in k or '_target_' in k]
             for k in alert_keys:
                 _notified_today.discard(k)
             # 2. 清空文件持久化记录
@@ -314,6 +315,11 @@ register_inmemory_reset_callback(_reset_inmemory_cache)
 
 # 全局单例
 _monitor = MonitorLoop()
+
+
+def get_monitor_instance():
+    """返回 MonitorLoop 系统单例，禁止新建实例"""
+    return _monitor
 
 
 def start_monitor():

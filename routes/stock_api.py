@@ -398,8 +398,8 @@ def api_reset_all_alerts():
     调用后满足告警条件的股票可立即重新发送飞书通知。
     """
     try:
-        from services.monitor import _monitor
-        _monitor.reset_all_alerts()
+        from services.monitor import get_monitor_instance
+        get_monitor_instance().reset_all_alerts()
         return jsonify({'ok': True, 'message': '所有股价告警已重置'})
     except Exception as e:
         import logging

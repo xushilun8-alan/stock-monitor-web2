@@ -206,8 +206,9 @@ def clear_rebuy_notification(stock_code: str, date: str,
 
 def clear_all_notifications(notif_file: str = "data/notification_status.json"):
     """
-    清空所有股价告警通知的持久化记录（alert/target 类型）。
-    不影响回购提醒（rebuy）记录。
+    清空所有股价告警通知的持久化记录。
+    直接删除通知状态文件（alert/target/rebuy 全部清空），
+    重置后下一轮监控满足条件即重新触发。
     无参数、无返回值。
     """
     import logging
@@ -216,20 +217,10 @@ def clear_all_notifications(notif_file: str = "data/notification_status.json"):
         if not os.path.exists(notif_file):
             logger.info("[Feishu] 告警通知文件不存在，无需清空")
             return
-        with open(notif_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        # 仅清除股价告警类型（alert / target），保留 rebuy
-        # 注意：文件 key 格式为 {code}_{type}_{date}，如 000831_alert_2026-04-09
-        # 用 '_alert_' / '_target_' 子串匹配（不能仅用 endswith，因为 key 以日期结尾）
-        keys_to_delete = [k for k in data
-                         if '_alert_' in k or '_target_' in k]
-        for k in keys_to_delete:
-            del data[k]
-        with open(notif_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        logger.info(f"[Feishu] 已清空 {len(keys_to_delete)} 条股价告警通知记录")
+        os.remove(notif_file)
+        logger.info("[Feishu] 告警通知文件已删除")
     except Exception as e:
-        logger.error(f"[Feishu] 清空告警通知记录失败: {e}")
+        logger.error(f"[Feishu] 删除通知文件失败: {e}")
 
 
 # ─── 对外接口 ─────────────────────────────────────────────────
