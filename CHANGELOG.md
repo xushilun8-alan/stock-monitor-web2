@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-04-09
+
+### Added
+- **全局重置当日股价告警通知** (`services/monitor.py`, `services/feishu_notifier.py`, `routes/stock_api.py`, `vue-project/`)
+  - `POST /api/stocks/reset-all-alerts` 一键清空所有股票当日告警记录，实时生效无需重启
+  - 双重清空：内存 `_notified_today` 集合 + `notification_status.json` 文件持久化
+  - `MonitorLoop.get_monitor_instance()` 单例访问函数，统一实例来源
+  - 前端 `IntervalBar.vue` 新增"重置告警"橙色按钮
+
+### Fixed
+- `clear_all_notifications()` 文件 key 匹配逻辑：`endswith(('_alert','_target'))` 改为 `'_alert_' in k or '_target_' in k`（key 以日期结尾，endswith 永远不匹配）
+- `start_monitor()` 改为调用 `get_monitor_instance().start()`，解决单例分裂问题
+- `reset_all_alerts()` 内存清空：`discard` 过滤改为 `clear()` 完全清空，避免遗漏
+- `clear_all_notifications()` 新增清空全局 `_notified_today` 集合（feishu_notifier → monitor 的跨模块内存同步）
+
 ## [1.2.0] - 2026-04-08
 
 ### Added

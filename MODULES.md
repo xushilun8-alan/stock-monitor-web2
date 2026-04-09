@@ -54,7 +54,7 @@ stock-monitor-web2/
 │   │   │   ├── StockModal.vue    # 添加/编辑弹窗
 │   │   │   ├── ConfirmModal.vue  # 删除确认弹窗
 │   │   │   ├── DestroyModal.vue  # 彻底删除确认弹窗
-│   │   │   ├── IntervalBar.vue   # 全局监控频率设置栏
+│   │   │   ├── IntervalBar.vue   # 全局监控频率设置栏（含"重置告警"按钮）
 │   │   │   ├── ToastNotification.vue # Toast 通知组件
 │   │   │   └── NavTabs.vue       # 导航标签页
 │   │   └── styles/
@@ -169,6 +169,6 @@ stock-monitor-web2/
 | `StockModal.vue` | 添加/编辑弹窗，含代码校验+自动获取名称 |
 | `ConfirmModal.vue` | 软删除确认 |
 | `DestroyModal.vue` | 彻底删除确认 |
-| `IntervalBar.vue` | 全局监控频率设置 |
+| `IntervalBar.vue` | 全局监控频率设置 + 重置告警按钮 |
 | `NavTabs.vue` | 导航标签页（含回收站计数 badge） |
 | `ToastNotification.vue` | Toast 通知渲染 |
