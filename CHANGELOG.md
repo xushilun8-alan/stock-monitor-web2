@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-04-13
+
+### Fixed
+
+- **stage_buying 监控线程启动时机** (`app.py`, `stage_buying/routes.py`)
+  - 原问题：监控线程依赖首次访问 `/api/stage-buying/stocks` 才启动，未打开 web 页面或未进入"阶段买入"tab 时监控不生效
+  - 修复方案：在 `create_app()` 中注册蓝图后、应用启动时直接调用 `_ensure_monitor_started()`
+  - 效果：应用启动后监控自动运行，无需登录 web 端、独立于前端工作
+
 ## [1.2.1] - 2026-04-09
 
 ### Added

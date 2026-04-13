@@ -136,6 +136,8 @@ stage_buying/
 4. 已触发阶段通过 `data/stage_notif_status.json` 去重，防止重复通知
 5. 发送飞书消息至 `FEISHU_TARGET`（见 `utils.py::send_stage_trigger_notification`）
 
+**启动时机**：应用启动时（`app.py::create_app()`）自动调用 `_ensure_monitor_started()`，无需前端请求、无需登录 web 端，独立运行。
+
 ## Vue 前端视图
 
 路径：`vue-project/src/views/StageBuying/`

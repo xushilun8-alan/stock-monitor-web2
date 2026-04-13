@@ -93,7 +93,7 @@ stock-monitor-web2/
 | **routes/stock_api** | RESTful API（Blueprint） | 见下方接口清单 |
 | **vue-project** | Vue 3 SPA 前端（替代旧模板） | Pinia + Composables + 组件化 |
 | **app** | 页面渲染路由 + 应用启动 | `app.py` 启动 Flask，Vue 构建后集成 |
-| **stage_buying** | 分阶段买入策略模块 | 阶段计算、价格监控、飞书通知、Excel 导入导出 |
+| **stage_buying** | 分阶段买入策略模块 | 阶段计算、价格监控（应用启动自动运行）、飞书通知、Excel 导入导出 |
 
 ## API 接口清单
 

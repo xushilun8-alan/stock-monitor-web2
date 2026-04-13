@@ -61,7 +61,11 @@ def create_app():
     from stage_buying import stage_buying_bp
     app.register_blueprint(stage_buying_bp)
 
-    # 启动后台监控
+    # 启动阶段买入监控（应用级别，自动运行，无需登录web端）
+    from stage_buying.routes import _ensure_monitor_started
+    _ensure_monitor_started()
+
+    # 启动股票行情监控
     start_monitor()
 
     # ── 页面渲染路由 ──────────────────────────────────────────

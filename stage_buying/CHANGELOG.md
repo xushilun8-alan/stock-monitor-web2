@@ -6,6 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1.1] - 2026-04-13
+
+### Fixed
+
+- **监控线程启动时机** (`app.py`)
+  - 原问题：`_ensure_monitor_started()` 仅在首次调用 `/api/stage-buying/stocks` 时触发，未访问 API 或打开 web 页面时监控不生效
+  - 修复：应用工厂 `create_app()` 中注册蓝图后直接调用 `_ensure_monitor_started()`
+  - 效果：Flask 应用启动即自动运行后台监控线程，无需前端、无需登录、独立工作
+
 ## [1.1.0] - 2026-04-04
 
 ### Added
