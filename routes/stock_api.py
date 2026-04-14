@@ -121,9 +121,9 @@ def api_add_stock():
     import re
     clean_raw = code_raw.strip().upper()
     clean = re.sub(r'^(SH|SZ)', '', clean_raw)
-    # A股：6位数字；美股：2-5个大写字母
-    if not (re.match(r'^\d{6}$', clean) or re.match(r'^[A-Z]{2,5}$', clean)):
-        return jsonify({'ok': False, 'error': '代码格式错误，A股为6位数字（如 601857），美股为2-5字母（如 AAPL）'}), 400
+    # 港股：4-5位纯数字；A股：6位纯数字；美股：2-5个大写字母
+    if not (re.match(r'^\d{6}$', clean) or re.match(r'^\d{4,5}$', clean) or re.match(r'^[A-Z]{2,5}$', clean)):
+        return jsonify({'ok': False, 'error': '代码格式错误，A股为6位数字（如 601857），港股为4-5位数字（如 02577），美股为2-5字母（如 AAPL）'}), 400
     if is_code_exists(clean):
         return jsonify({'ok': False, 'error': '该代码已存在'}), 400
 
@@ -207,9 +207,9 @@ def api_update_stock(code: str):
     if code_changed:
         import re
         clean = re.sub(r'^(SH|SZ)', '', new_code)
-        if not (re.match(r'^\d{6}$', clean) or re.match(r'^[A-Z]{2,5}$', clean)):
+        if not (re.match(r'^\d{6}$', clean) or re.match(r'^\d{4,5}$', clean) or re.match(r'^[A-Z]{2,5}$', clean)):
             log_api_error("UPDATE stock", f"Code format invalid: {new_code}")
-            return jsonify({'ok': False, 'error': '代码格式错误，A股为6位数字（如 601857），美股为2-5字母（如 AAPL）'}), 400
+            return jsonify({'ok': False, 'error': '代码格式错误，A股为6位数字（如 601857），港股为4-5位数字（如 02577），美股为2-5字母（如 AAPL）'}), 400
         if is_code_exists(clean, exclude_code=old_code):
             log_api_error("UPDATE stock", f"New code already exists: {clean}")
             return jsonify({'ok': False, 'error': '新代码已存在'}), 400
@@ -333,8 +333,8 @@ def api_check_code():
 
     import re
     clean = re.sub(r'^(sh|sz)', '', code.upper())
-    if not (re.match(r'^\d{6}$', clean) or re.match(r'^[A-Z]{2,5}$', clean)):
-        return jsonify({'ok': False, 'error': '代码格式错误，A股为6位数字（如 601857），美股为2-5字母（如 AAPL）'}), 400
+    if not (re.match(r'^\d{6}$', clean) or re.match(r'^\d{4,5}$', clean) or re.match(r'^[A-Z]{2,5}$', clean)):
+        return jsonify({'ok': False, 'error': '代码格式错误，A股为6位数字（如 601857），港股为4-5位数字（如 02577），美股为2-5字母（如 AAPL）'}), 400
 
     if is_code_exists(clean, exclude):
         return jsonify({'ok': False, 'error': '该代码已存在'}), 400

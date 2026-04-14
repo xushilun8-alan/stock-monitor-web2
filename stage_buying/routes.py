@@ -113,11 +113,11 @@ def api_add_stock():
     if not code_raw:
         return _fail('股票代码不能为空')
 
-    # 代码格式校验（A股6位，美股字母）
+    # 代码格式校验（A股6位，港股4-5位，美股字母）
     clean_raw = code_raw.upper()
     clean = re.sub(r'^(SH|SZ)', '', clean_raw)
-    if not (re.match(r'^\d{6}$', clean) or re.match(r'^[A-Z]{2,5}$', clean)):
-        return _fail('代码格式错误，A股为6位数字（如 601857），美股为2-5字母（如 AAPL）')
+    if not (re.match(r'^\d{6}$', clean) or re.match(r'^\d{4,5}$', clean) or re.match(r'^[A-Z]{2,5}$', clean)):
+        return _fail('代码格式错误，A股为6位数字（如 601857），港股为4-5位数字（如 02577），美股为2-5字母（如 AAPL）')
 
     if is_code_exists(clean):
         return _fail('该代码已存在')

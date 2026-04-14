@@ -17,6 +17,7 @@
 
 【股票分类判断】
 - 美股：代码含字母（区分大小写，A-Z） → gb_前缀 + Yahoo/sina国际
+- 港股：纯数字4-5位（A股6位，港股4-5位区分） → .HK后缀 + Yahoo/sina港股
 - A股：纯数字6位 → sh/sz前缀 + 腾讯/新浪国内
 
 【返回字段】
@@ -69,6 +70,12 @@ _price_cache = _PriceCache(ttl_seconds=30)
 
 # ── 工具函数 ────────────────────────────────────────────────
 
+def is_hk_stock(code: str) -> bool:
+    """判断是否为港股（纯数字4-5位，如 02577、0700）"""
+    c = code.strip()
+    return bool(re.match(r'^\d{4,5}$', c))
+
+
 def is_us_stock(code: str) -> bool:
     """判断是否为美股（代码含字母即为美股）"""
     c = code.lower().replace('gb_', '')
@@ -81,6 +88,100 @@ def _market_prefix(code: str) -> str:
     if c.startswith(('6', '7', '9', '3')):
         return 'sh'
     return 'sz'
+
+
+# ── 港股 ────────────────────────────────────────────────────
+
+def _get_hk_stock_price_yahoo(symbol: str) -> Optional[Dict[str, Any]]:
+    """港股：Yahoo Finance（symbol 格式如 02577.HK）"""
+    try:
+        # 港股代码直接加 .HK 后缀
+        if not symbol.upper().endswith('.HK'):
+            symbol = symbol.strip() + '.HK'
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol.upper()}"
+        resp = requests.get(
+            url,
+            timeout=10,
+            headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
+        )
+        if resp.status_code != 200:
+            return None
+        d = resp.json()
+        result = d['chart']['result'][0]
+        meta = result['meta']
+
+        prev_close = meta.get('previousClose', meta.get('chartPreviousClose', 0))
+        current = meta.get('regularMarketPrice', 0)
+        opening = meta.get('regularMarketOpen', 0)
+        high = meta.get('regularMarketDayHigh', 0)
+        low = meta.get('regularMarketDayLow', 0)
+        timestamp = meta.get('regularMarketTime', 0)
+
+        if opening == 0:
+            opening = current
+        if prev_close > 0:
+            change_percent = ((current - prev_close) / prev_close) * 100
+        else:
+            change_percent = 0
+
+        return {
+            'current_price': current,
+            'opening_price': opening,
+            'yesterday_close': prev_close,
+            'high': high,
+            'low': low,
+            'change_percent': change_percent,
+            'update_time': datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S') if timestamp else datetime.now().strftime('%H:%M:%S'),
+            'name': meta.get('shortName', meta.get('symbol', symbol.upper())),
+            'source': 'yahoo',
+        }
+    except Exception:
+        return None
+
+
+def _get_hk_stock_price_sina(symbol: str) -> Optional[Dict[str, Any]]:
+    """港股：新浪财经（备用）"""
+    try:
+        # 新浪港股代码格式：hk + 5位代码（不足5位前面补0，如 hk02577）
+        symbol = symbol.strip().zfill(5)
+        url = f"https://hq.sinajs.cn/list=hk{symbol}"
+        headers = {'Referer': 'https://finance.sina.com.cn'}
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return None
+        match = re.search(r'"([^"]*)"', resp.text)
+        if not match:
+            return None
+        data = match.group(1).split(',')
+        # 港股格式（Sina hk02577）：
+        # [0]=英文名, [1]=中文名, [2]=当前价, [3]=昨收, [4]=今开,
+        # [5]=最高, [6]=最低, [7]=涨跌额, [8]=涨跌%, ...
+        if len(data) < 9:
+            return None
+        current = float(data[2]) if data[2] else 0
+        yesterday = float(data[3]) if data[3] else 0
+        opening = float(data[4]) if data[4] else current
+        high = float(data[5]) if data[5] else current
+        low = float(data[6]) if data[6] else current
+        change_percent = float(data[8]) if data[8] else 0
+        return {
+            'current_price': current,
+            'opening_price': opening,
+            'yesterday_close': yesterday,
+            'high': high,
+            'low': low,
+            'change_percent': change_percent,
+            'update_time': data[17] if len(data) > 17 else datetime.now().strftime('%H:%M:%S'),
+            'name': data[1] if data[1] else data[0],
+            'source': 'sina_hk',
+        }
+    except Exception:
+        return None
+
+
+def _get_hk_stock_price(symbol: str) -> Optional[Dict[str, Any]]:
+    """港股：新浪优先（Yahoo Finance在服务器端可能被限流）"""
+    return _get_hk_stock_price_sina(symbol) or _get_hk_stock_price_yahoo(symbol)
 
 
 # ── A股 ────────────────────────────────────────────────────
@@ -241,7 +342,7 @@ def _get_us_stock_price(symbol: str) -> Optional[Dict[str, Any]]:
 
 def get_stock_price(stock_code: str) -> Optional[Dict[str, Any]]:
     """
-    获取单只股票价格数据（A股/美股自动路由）。
+    获取单只股票价格数据（A股/港股/美股自动路由）。
     结果会被缓存 30 秒，同一股票 30 秒内的重复调用直接返回缓存值。
     """
     clean = stock_code.strip()
@@ -250,6 +351,8 @@ def get_stock_price(stock_code: str) -> Optional[Dict[str, Any]]:
         return cached
     if is_us_stock(clean):
         data = _get_us_stock_price(clean)
+    elif is_hk_stock(clean):
+        data = _get_hk_stock_price(clean)
     else:
         data = _get_a_stock_price(clean)
     if data:
@@ -259,14 +362,18 @@ def get_stock_price(stock_code: str) -> Optional[Dict[str, Any]]:
 
 def get_stock_name(code: str) -> str:
     """
-    获取股票名称（A股/美股通用）
+    获取股票名称（A股/港股/美股通用）
     A股：通过腾讯数据获取名称
+    港股：通过Yahoo Finance
     美股：通过Yahoo Finance获取shortName
     """
     clean = code.strip()
     if is_us_stock(clean):
         sym = clean.upper().replace('GB_', '')
         pd = _get_us_stock_price_yahoo(sym)
+        return pd['name'] if pd else ''
+    elif is_hk_stock(clean):
+        pd = _get_hk_stock_price(clean)
         return pd['name'] if pd else ''
     else:
         pd = _get_a_stock_price(clean)

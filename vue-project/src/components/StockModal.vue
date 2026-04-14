@@ -11,7 +11,7 @@
           v-model="form.code"
           :disabled="isEdit && !codeChanged"
           :class="{ error: codeError }"
-          placeholder="A股如 601857，美股如 AAPL"
+          placeholder="A股如 601857，港股如 02577，美股如 AAPL"
           maxlength="10"
           @blur="onCodeBlur"
           @input="onCodeInput"
@@ -200,8 +200,8 @@ async function onCodeBlur() {
   if (!raw) return
 
   // 前端格式校验
-  if (!/^\d{6}$/.test(raw) && !/^[A-Z]{2,5}$/i.test(raw)) {
-    codeError.value = '代码格式错误，A股为6位数字（如 601857），美股为2-5字母（如 AAPL）'
+  if (!/^\d{6}$/.test(raw) && !/^\d{4,5}$/.test(raw) && !/^[A-Z]{2,5}$/i.test(raw)) {
+    codeError.value = '代码格式错误，A股为6位数字（如 601857），港股为4-5位数字（如 02577），美股为2-5字母（如 AAPL）'
     return
   }
 
@@ -237,8 +237,8 @@ async function handleSubmit() {
   }
 
   const codeRaw = f.code.trim().replace(/^(SH|SZ)/i, '')
-  if (!/^\d{6}$/.test(codeRaw) && !/^[A-Z]{2,5}$/i.test(codeRaw)) {
-    toast('代码格式错误，A股为6位数字（如 601857），美股为2-5字母（如 AAPL）', 'err')
+  if (!/^\d{6}$/.test(codeRaw) && !/^\d{4,5}$/.test(codeRaw) && !/^[A-Z]{2,5}$/i.test(codeRaw)) {
+    toast('代码格式错误，A股为6位数字（如 601857），港股为4-5位数字（如 02577），美股为2-5字母（如 AAPL）', 'err')
     return
   }
 
