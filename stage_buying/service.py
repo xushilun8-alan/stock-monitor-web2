@@ -332,12 +332,17 @@ def recalculate_single_stage(stage_id: int, new_shares: int) -> Optional[Dict[st
     floor_price = stock['floor_price']
     target_price = stock['target_price']
 
+    # 与 calculate_stages 保持一致：floor_price 为空时，取所有阶段中最后一阶的 buy_price 作为临时底价
+    effective_floor_price = floor_price
+    if effective_floor_price is None:
+        all_stages = models.get_stage_details(stage['stock_id'])
+        effective_floor_price = all_stages[-1]['buy_price'] if all_stages else None
+
     # 底价亏损 = 底价 * 当阶股数 - 当阶金额（亏损为负）
-    # 公式：阶段1 = 底价*初始股数-当阶金额；非阶段1 = 底价*每阶股数-当阶金额
     floor_loss = None
     loss_rate = None
-    if floor_price is not None:
-        floor_loss = floor_price * new_shares - buy_amount
+    if effective_floor_price is not None and new_shares != 0:
+        floor_loss = effective_floor_price * new_shares - buy_amount
         floor_loss = _round8(floor_loss)
         if buy_amount != 0:
             loss_rate = _round8(floor_loss / buy_amount * 100)

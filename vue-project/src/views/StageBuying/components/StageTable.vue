@@ -61,7 +61,7 @@
               ref="sharesInputRef"
               v-model.number="editSharesValue"
               type="number"
-              min="1"
+              min="0"
               class="shares-input"
               @blur="saveShares(stage)"
               @keydown.enter="saveShares(stage)"
@@ -147,7 +147,7 @@ async function startEditShares(stage) {
 async function saveShares(stage) {
   if (editingStageId.value !== stage.id) return
   const newShares = editSharesValue.value
-  if (newShares === null || newShares === '' || newShares <= 0 || !Number.isInteger(Number(newShares))) {
+  if (newShares === null || newShares === '' || newShares < 0 || !Number.isInteger(Number(newShares))) {
     cancelEdit()
     return
   }

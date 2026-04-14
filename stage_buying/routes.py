@@ -238,10 +238,10 @@ def api_update_stage_shares(stage_id: int):
         return _fail('缺少 shares 字段')
     try:
         new_shares = int(new_shares)
-        if new_shares <= 0:
-            return _fail('股数必须大于0')
+        if new_shares < 0:
+            return _fail('股数必须大于等于0')
     except (ValueError, TypeError):
-        return _fail('shares 必须为正整数')
+        return _fail('shares 必须为整数')
 
     stage = recalculate_single_stage(stage_id, new_shares)
     if stage is None:
