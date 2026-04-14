@@ -92,6 +92,50 @@ def _market_prefix(code: str) -> str:
 
 # ── 港股 ────────────────────────────────────────────────────
 
+def _get_hk_stock_price_eastmoney(symbol: str) -> Optional[Dict[str, Any]]:
+    """港股：东方财富（最实时，secid=116.xxxxx）"""
+    try:
+        url = 'https://push2.eastmoney.com/api/qt/stock/get'
+        params = {
+            'secid': f'116.{symbol}',
+            'fields': 'f43,f44,f45,f46,f47,f48,f50,f57,f58,f60,f169,f170,f171,f172',
+            'ut': 'fa5fd1943c7b386f172d6893dbfba10b',
+        }
+        headers = {
+            'Referer': 'https://quote.eastmoney.com/',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+        }
+        resp = requests.get(url, params=params, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return None
+        d = resp.json()
+        data = d.get('data')
+        if not data:
+            return None
+        # f43=当前价(×1000) f44=最高(×1000) f45=最低(×1000) f46=今开(×1000)
+        # f60=昨收(×1000) f169=涨跌额(×100) f170=涨跌%(×100)
+        current = data.get('f43', 0) / 1000
+        yesterday = data.get('f60', 0) / 1000
+        opening = data.get('f46', 0) / 1000 or current
+        high = data.get('f44', 0) / 1000
+        low = data.get('f45', 0) / 1000
+        change_amt = data.get('f169', 0) / 100
+        change_percent = data.get('f170', 0) / 100
+        return {
+            'current_price': current,
+            'opening_price': opening,
+            'yesterday_close': yesterday,
+            'high': high,
+            'low': low,
+            'change_percent': change_percent,
+            'change_amount': change_amt,
+            'update_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'name': data.get('f58') or data.get('f57'),
+            'source': 'eastmoney_hk',
+        }
+    except Exception:
+        return None
+
 def _get_hk_stock_price_yahoo(symbol: str) -> Optional[Dict[str, Any]]:
     """港股：Yahoo Finance（symbol 格式如 02577.HK）"""
     try:
@@ -180,8 +224,10 @@ def _get_hk_stock_price_sina(symbol: str) -> Optional[Dict[str, Any]]:
 
 
 def _get_hk_stock_price(symbol: str) -> Optional[Dict[str, Any]]:
-    """港股：新浪优先（Yahoo Finance在服务器端可能被限流）"""
-    return _get_hk_stock_price_sina(symbol) or _get_hk_stock_price_yahoo(symbol)
+    """港股：东方财富优先（实时性最佳），新浪/ Yahoo备用"""
+    return (_get_hk_stock_price_eastmoney(symbol)
+            or _get_hk_stock_price_sina(symbol)
+            or _get_hk_stock_price_yahoo(symbol))
 
 
 # ── A股 ────────────────────────────────────────────────────
